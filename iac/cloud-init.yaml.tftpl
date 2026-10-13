@@ -1,0 +1,41 @@
+#cloud-config
+write_files:
+  - path: /etc/default/minecraft-watchdog
+    permissions: "0600"
+    owner: root:root
+    content: |
+      ALWAYS_ON="${always_on}"
+      IDLE_TIMEOUT_MINUTES="${idle_timeout}"
+      GITHUB_REPOSITORY="${github_repository}"
+      GITHUB_PAT="${github_pat}"
+
+  - path: /opt/minecraft/docker-compose.yml
+    permissions: "0640"
+    owner: root:root
+    content: ${jsonencode(docker_compose)}
+
+  - path: /usr/local/bin/idle-watchdog.sh
+    permissions: "0755"
+    owner: root:root
+    content: ${jsonencode(watchdog_script)}
+
+  - path: /usr/local/bin/bootstrap-volume.sh
+    permissions: "0755"
+    owner: root:root
+    content: ${jsonencode(bootstrap_script)}
+
+  - path: /etc/systemd/system/mc-idle-watchdog.service
+    permissions: "0644"
+    owner: root:root
+    content: ${jsonencode(systemd_service)}
+
+  - path: /etc/systemd/system/mc-idle-watchdog.timer
+    permissions: "0644"
+    owner: root:root
+    content: ${jsonencode(systemd_timer)}
+
+runcmd:
+  - /usr/local/bin/bootstrap-volume.sh "${volume_id}" "/mnt/mc-data"
+  - cd /opt/minecraft && docker compose up -d
+  - systemctl daemon-reload
+  - systemctl enable --now mc-idle-watchdog.timer

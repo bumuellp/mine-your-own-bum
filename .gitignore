@@ -1,0 +1,27 @@
+# OpenTofu / Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Local runtime configs & secrets (Never commit plaintext secrets)
+config/settings.yaml
+config/secrets.yaml
+*.age
+*.key
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

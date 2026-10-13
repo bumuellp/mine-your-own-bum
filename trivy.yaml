@@ -1,0 +1,16 @@
+---
+# Trivy Configuration File (trivy.yaml)
+severity:
+  - CRITICAL
+  - HIGH
+
+scanners:
+  - vuln
+  - misconfig
+  - secret
+  - license
+
+vulnerability:
+  ignorefile: .trivyignore
+
+exit-code: 0

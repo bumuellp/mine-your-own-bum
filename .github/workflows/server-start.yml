@@ -1,0 +1,160 @@
+---
+name: Start Minecraft Server
+
+'on':
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: minecraft-server-state
+  cancel-in-progress: false
+
+jobs:
+  start:
+    name: Provision & Start Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version_file: .tofu-version
+
+      - name: Decrypt Secrets
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@v1.6.0
+        with:
+          age-key: ${{ secrets.SOPS_AGE_KEY }}
+          file: config/secrets.enc.yaml
+          output: config/secrets.yaml
+
+      - name: Parse S3 Backend Configuration
+        id: s3_cfg
+        run: |
+          SECRETS_FILE="config/secrets.yaml"
+          [ -f "$SECRETS_FILE" ] || SECRETS_FILE="config/secrets.example.yaml"
+
+          S3_BUCKET=$(grep "^s3_bucket:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
+          S3_ENDPOINT=$(grep "^s3_endpoint:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
+          S3_ACCESS_KEY=$(grep "^s3_access_key:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
+          S3_SECRET_KEY=$(grep "^s3_secret_key:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
+
+          echo "bucket=$S3_BUCKET" >> "$GITHUB_OUTPUT"
+          echo "endpoint=$S3_ENDPOINT" >> "$GITHUB_OUTPUT"
+          echo "access_key=$S3_ACCESS_KEY" >> "$GITHUB_OUTPUT"
+          echo "secret_key=$S3_SECRET_KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Initialize OpenTofu Backend
+        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@v1.7.0
+        with:
+          working-directory: iac
+          bucket: ${{ steps.s3_cfg.outputs.bucket }}
+          endpoint: ${{ steps.s3_cfg.outputs.endpoint }}
+          key: mine-your-own-bum/terraform.tfstate
+          access-key: ${{ steps.s3_cfg.outputs.access_key }}
+          secret-key: ${{ steps.s3_cfg.outputs.secret_key }}
+
+      - name: OpenTofu Apply (Provision Server)
+        id: tofu_apply
+        working-directory: iac
+        env:
+          TF_VAR_github_repository: ${{ github.repository }}
+          TF_VAR_github_pat: ${{ secrets.PAT_WATCHDOG || '' }}
+        run: |
+          tofu apply -auto-approve
+
+          DNS_TOKEN=$(tofu output -raw dns_token)
+          if [ -n "$DNS_TOKEN" ]; then
+            echo "::add-mask::$DNS_TOKEN"
+          fi
+
+          cat << EOF >> "$GITHUB_OUTPUT"
+          ipv4=$(tofu output -raw server_ipv4)
+          ipv6=$(tofu output -raw server_ipv6)
+          dns_enabled=$(tofu output -raw dns_enabled)
+          dns_provider=$(tofu output -raw dns_provider)
+          dns_domain=$(tofu output -raw dns_domain)
+          dns_subname=$(tofu output -raw dns_subname)
+          dns_ttl=$(tofu output -raw dns_ttl)
+          dns_fqdn=$(tofu output -raw dns_fqdn)
+          dns_token=$DNS_TOKEN
+          EOF
+
+      - name: Sync DNS IPv4 Record
+        if: steps.tofu_apply.outputs.dns_enabled == 'true'
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@v1.6.0
+        with:
+          provider: ${{ steps.tofu_apply.outputs.dns_provider }}
+          token: ${{ steps.tofu_apply.outputs.dns_token }}
+          domain: ${{ steps.tofu_apply.outputs.dns_domain }}
+          subname: ${{ steps.tofu_apply.outputs.dns_subname }}
+          type: A
+          records: ${{ steps.tofu_apply.outputs.ipv4 }}
+          ttl: ${{ steps.tofu_apply.outputs.dns_ttl }}
+          action: sync
+
+      - name: Sync DNS IPv6 Record
+        if: steps.tofu_apply.outputs.dns_enabled == 'true' && steps.tofu_apply.outputs.ipv6 != ''
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@v1.6.0
+        with:
+          provider: ${{ steps.tofu_apply.outputs.dns_provider }}
+          token: ${{ steps.tofu_apply.outputs.dns_token }}
+          domain: ${{ steps.tofu_apply.outputs.dns_domain }}
+          subname: ${{ steps.tofu_apply.outputs.dns_subname }}
+          type: AAAA
+          records: ${{ steps.tofu_apply.outputs.ipv6 }}
+          ttl: ${{ steps.tofu_apply.outputs.dns_ttl }}
+          action: sync
+
+      - name: Generate GitHub Actions Step Summary
+        run: |
+          IPV4="${{ steps.tofu_apply.outputs.ipv4 }}"
+          IPV6="${{ steps.tofu_apply.outputs.ipv6 }}"
+          DNS_ENABLED="${{ steps.tofu_apply.outputs.dns_enabled }}"
+          FQDN="${{ steps.tofu_apply.outputs.dns_fqdn }}"
+
+          if [ "$DNS_ENABLED" = "true" ] && [ -n "$FQDN" ]; then
+            JAVA_HOST="$FQDN"
+            BEDROCK_HOST="$FQDN"
+            DISPLAY_DOMAIN="$FQDN"
+          else
+            JAVA_HOST="$IPV4"
+            BEDROCK_HOST="$IPV4"
+            DISPLAY_DOMAIN="*Not configured (using raw IP)*"
+          fi
+
+          IPV6_ROW=""
+          if [ -n "$IPV6" ]; then
+            IPV6_ROW="| **IPv6 Address** | \`$IPV6\` |"
+          fi
+
+          cat << EOF >> "$GITHUB_STEP_SUMMARY"
+          ## 🎮 Minecraft Server Status: **ONLINE**
+
+          The ephemeral cloud server has been provisioned and persistent storage attached.
+
+          ### 🌐 Connection Information
+          | Parameter | Value |
+          | :--- | :--- |
+          | **Domain / FQDN** | \`$DISPLAY_DOMAIN\` |
+          | **Java Edition** | \`$JAVA_HOST:25565\` |
+          | **Bedrock Edition** | \`$BEDROCK_HOST:19132\` (Port: \`19132\`) |
+          | **IPv4 Address** | \`$IPV4\` |
+          $IPV6_ROW
+
+          > [!NOTE]
+          > Because compute instances are completely ephemeral, **every boot is a fresh boot**.
+          > Docker and Minecraft containers initialize and verify runtime files upon startup.
+          > It may take **1 to 2 minutes** before the server begins answering player pings on port 25565 / 19132.
+
+          ### 🛑 Shutdown & Idle Watchdog
+          - **Automatic Idle Stop**: If no players are online for the configured idle threshold,
+            the server automatically saves world data and terminates the VM to prevent cloud costs.
+          - **Manual Stop**: Run the **Stop Minecraft Server** workflow whenever you finish playing.
+          - **Data Retention**: World saves, player data, and configurations are permanently stored
+            on the persistent Hetzner volume and survive VM destruction.
+          EOF

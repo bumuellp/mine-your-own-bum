@@ -1,0 +1,35 @@
+---
+name: Template Sync
+
+'on':
+  # Run weekly on Sundays at midnight UTC
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Sync with Upstream Template
+    if: github.repository != 'bumuellp/mine-your-own-bum'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.PAT_TEMPLATE_SYNC || secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+
+      - name: Sync from Upstream Template
+        uses: AndreasAugustin/actions-template-sync@v2
+        with:
+          source_repo_path: bumuellp/mine-your-own-bum
+          upstream_branch: main
+          pr_title: 'chore(template): sync updates from upstream mine-your-own-bum'
+          pr_commit_msg: 'chore(template): sync upstream changes'
+          pr_branch_name_prefix: template-sync
+          github_token: ${{ secrets.PAT_TEMPLATE_SYNC || secrets.GITHUB_TOKEN }}

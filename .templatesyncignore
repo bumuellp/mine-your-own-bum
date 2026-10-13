@@ -1,0 +1,5 @@
+# Instance-specific configuration files
+# These files should not be overwritten when syncing from upstream mine-your-own-bum
+config/secrets.enc.yaml
+config/settings.yaml
+.sops.yaml

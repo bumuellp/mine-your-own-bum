@@ -1,0 +1,52 @@
+services:
+  mc-server:
+    image: itzg/minecraft-server:2026.10.0-java21
+    container_name: mc-server
+    restart: unless-stopped
+    stop_grace_period: 2m
+    ports:
+      - "25565:25565"
+      - "19132:19132/udp"
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "${minecraft_version}"
+      MEMORY: "${jvm_memory}"
+      MOTD: "${motd}"
+      MAX_PLAYERS: "${max_players}"
+      DIFFICULTY: "${difficulty}"
+      ENABLE_RCON: "true"
+      RCON_PORT: "25575"
+      RCON_PASSWORD: "${rcon_password}"
+      STOP_SERVER_ANNOUNCE_DELAY: "15"
+      PLUGINS: |
+%{ for p in plugins ~}
+        ${p}
+%{ endfor ~}
+    volumes:
+      - /mnt/mc-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc-health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 2m
+%{ if backup_enabled ~}
+  mc-backup:
+    image: itzg/mc-backup:2026.10.0
+    container_name: mc-backup
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      mc-server:
+        condition: service_healthy
+    environment:
+      BACKUP_INTERVAL: "${backup_cron}"
+      RCON_HOST: "mc-server"
+      RCON_PORT: "25575"
+      RCON_PASSWORD: "${rcon_password}"
+      INITIAL_DELAY: "10m"
+    volumes:
+      - /mnt/mc-data:/data:ro
+      - /mnt/mc-data/backups:/backups
+%{ endif ~}

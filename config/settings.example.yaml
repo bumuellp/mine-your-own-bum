@@ -1,0 +1,32 @@
+---
+server:
+  server_type: "cpx21"
+  location: "fsn1"
+  volume_size_gb: 10
+  always_on: false
+  idle_timeout_minutes: 15
+  ssh_allowed_ips: []  # Add CIDRs e.g. ["203.0.113.50/32"] or leave empty to drop TCP 22
+
+minecraft:
+  version: "LATEST"
+  jvm_memory: "6G"
+  motd: "Mine Your Own Bum - On-Demand Crossplay Server"
+  max_players: 20
+  difficulty: "normal"
+  plugins:
+    # Crossplay: Dynamic endpoints track the latest stable builds to prevent Bedrock client lockouts
+    - "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
+    - "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot"
+    # Example: Additional custom plugin or mod download URLs (or pinned GitHub release jars)
+    # - "https://github.com/MilkBowl/Vault/releases/download/1.7.3/Vault.jar"
+
+dns:
+  enabled: false
+  provider: "desec"  # Supported: "desec", "ionos"
+  domain: "my-minecraft.dedyn.io"
+  subname: "mc"
+  ttl: 60
+
+backup:
+  enabled: false
+  cron: "0 4 * * *"

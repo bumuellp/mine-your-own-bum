@@ -1,0 +1,141 @@
+---
+name: Stop Minecraft Server
+
+'on':
+  workflow_dispatch:
+  repository_dispatch:
+    types: [minecraft-idle-stop, stop-minecraft-server]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: minecraft-server-state
+  cancel-in-progress: false
+
+jobs:
+  stop:
+    name: Teardown & Destroy Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version_file: .tofu-version
+
+      - name: Decrypt Secrets
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@v1.6.0
+        with:
+          age-key: ${{ secrets.SOPS_AGE_KEY }}
+          file: config/secrets.enc.yaml
+          output: config/secrets.yaml
+
+      - name: Parse S3 Backend Configuration
+        id: s3_cfg
+        run: |
+          SECRETS_FILE="config/secrets.yaml"
+          [ -f "$SECRETS_FILE" ] || SECRETS_FILE="config/secrets.example.yaml"
+
+          S3_BUCKET=$(grep "^s3_bucket:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
+          S3_ENDPOINT=$(grep "^s3_endpoint:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
+          S3_ACCESS_KEY=$(grep "^s3_access_key:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
+          S3_SECRET_KEY=$(grep "^s3_secret_key:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
+
+          echo "bucket=$S3_BUCKET" >> "$GITHUB_OUTPUT"
+          echo "endpoint=$S3_ENDPOINT" >> "$GITHUB_OUTPUT"
+          echo "access_key=$S3_ACCESS_KEY" >> "$GITHUB_OUTPUT"
+          echo "secret_key=$S3_SECRET_KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Initialize OpenTofu Backend
+        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@v1.7.0
+        with:
+          working-directory: iac
+          bucket: ${{ steps.s3_cfg.outputs.bucket }}
+          endpoint: ${{ steps.s3_cfg.outputs.endpoint }}
+          key: mine-your-own-bum/terraform.tfstate
+          access-key: ${{ steps.s3_cfg.outputs.access_key }}
+          secret-key: ${{ steps.s3_cfg.outputs.secret_key }}
+
+      - name: Refresh State & Parse DNS Configuration
+        id: dns_cfg
+        working-directory: iac
+        env:
+          TF_VAR_github_repository: ${{ github.repository }}
+        run: |
+          tofu refresh
+
+          DNS_TOKEN=$(tofu output -raw dns_token)
+          if [ -n "$DNS_TOKEN" ]; then
+            echo "::add-mask::$DNS_TOKEN"
+          fi
+
+          cat << EOF >> "$GITHUB_OUTPUT"
+          enabled=$(tofu output -raw dns_enabled)
+          provider=$(tofu output -raw dns_provider)
+          domain=$(tofu output -raw dns_domain)
+          subname=$(tofu output -raw dns_subname)
+          fqdn=$(tofu output -raw dns_fqdn)
+          dns_token=$DNS_TOKEN
+          EOF
+
+      - name: Delete DNS IPv4 Record
+        if: steps.dns_cfg.outputs.enabled == 'true'
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@v1.6.0
+        with:
+          provider: ${{ steps.dns_cfg.outputs.provider }}
+          token: ${{ steps.dns_cfg.outputs.dns_token }}
+          domain: ${{ steps.dns_cfg.outputs.domain }}
+          subname: ${{ steps.dns_cfg.outputs.subname }}
+          type: A
+          action: delete
+
+      - name: Delete DNS IPv6 Record
+        if: steps.dns_cfg.outputs.enabled == 'true'
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@v1.6.0
+        with:
+          provider: ${{ steps.dns_cfg.outputs.provider }}
+          token: ${{ steps.dns_cfg.outputs.dns_token }}
+          domain: ${{ steps.dns_cfg.outputs.domain }}
+          subname: ${{ steps.dns_cfg.outputs.subname }}
+          type: AAAA
+          action: delete
+
+      - name: OpenTofu Destroy Server (Targeted)
+        working-directory: iac
+        env:
+          TF_VAR_github_repository: ${{ github.repository }}
+        run: |
+          # Destroy only the ephemeral compute server, preserving volume and firewall
+          tofu destroy -target=module.server -auto-approve
+
+      - name: Generate GitHub Actions Step Summary
+        run: |
+          TRIGGER_EVENT="${{ github.event_name }}"
+          FQDN="${{ steps.dns_cfg.outputs.fqdn }}"
+
+          STOP_REASON="The server was manually shut down via workflow dispatch."
+          if [ "$TRIGGER_EVENT" = "repository_dispatch" ]; then
+            STOP_REASON="The server was automatically shut down by the **Idle Watchdog** because no players were active."
+          fi
+
+          DNS_ROW=""
+          if [ -n "$FQDN" ]; then
+            DNS_ROW="- **DNS Record**: \`$FQDN\` entry removed."
+          fi
+
+          cat << EOF >> "$GITHUB_STEP_SUMMARY"
+          ## 🛑 Minecraft Server Status: **OFFLINE**
+
+          $STOP_REASON
+
+          ### 💾 State Preservation
+          - **Compute Instance**: Terminated to halt compute charges.
+          - **Persistent Volume**: Safe & retained on Hetzner Cloud.
+          $DNS_ROW
+
+          To play again, trigger the **Start Minecraft Server** workflow.
+          EOF

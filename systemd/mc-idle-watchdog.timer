@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic trigger for Minecraft Idle Watchdog
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=mc-idle-watchdog.service
+
+[Install]
+WantedBy=timers.target
