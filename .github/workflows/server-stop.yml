@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2
@@ -28,7 +28,7 @@ jobs:
           tofu_version_file: .tofu-version
 
       - name: Decrypt Secrets
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@v1.6.0
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
@@ -57,7 +57,7 @@ jobs:
           echo "secret_key=$S3_SECRET_KEY" >> "$GITHUB_OUTPUT"
 
       - name: Initialize OpenTofu Backend
-        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@v1.7.0
+        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
         with:
           working-directory: iac
           bucket: ${{ steps.s3_cfg.outputs.bucket }}
@@ -90,7 +90,7 @@ jobs:
 
       - name: Delete DNS IPv4 Record
         if: steps.dns_cfg.outputs.enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@v1.6.0
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
         with:
           provider: ${{ steps.dns_cfg.outputs.provider }}
           token: ${{ steps.dns_cfg.outputs.dns_token }}
@@ -101,7 +101,7 @@ jobs:
 
       - name: Delete DNS IPv6 Record
         if: steps.dns_cfg.outputs.enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@v1.6.0
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
         with:
           provider: ${{ steps.dns_cfg.outputs.provider }}
           token: ${{ steps.dns_cfg.outputs.dns_token }}

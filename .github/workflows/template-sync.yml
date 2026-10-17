@@ -19,13 +19,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           token: ${{ secrets.PAT_TEMPLATE_SYNC || secrets.GITHUB_TOKEN }}
           persist-credentials: false
 
       - name: Sync from Upstream Template
-        uses: AndreasAugustin/actions-template-sync@v2
+        uses: AndreasAugustin/actions-template-sync@6e1d0089686f8940604fc15baae62367bf6ee860 # v2
         with:
           source_repo_path: bumuellp/mine-your-own-bum
           upstream_branch: main
