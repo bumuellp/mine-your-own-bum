@@ -37,6 +37,7 @@ It combines ephemeral compute instances with persistent block volume retention, 
 - **Java & Bedrock Crossplay**: Powered by PaperMC with GeyserMC and Floodgate, allowing PC, mobile, and console players to play together seamlessly on standard ports (`25565` Java, `19132` Bedrock).
 - **Dynamic DNS Integration**: Built-in support for **deSEC.io** and **IONOS Domain APIs** automatically publishes the server's public IPv4/IPv6 on start and removes it on shutdown.
 - **Encrypted Secrets with SOPS + Age**: Keep API tokens safe directly inside your repository via GitOps encryption.
+- **Client-Side State Encryption**: End-to-end client-side encryption of OpenTofu state and plan files on the S3-compatible backend using **PBKDF2** key derivation and **AES-GCM** encryption (`aes_gcm`). State data is never stored unencrypted in object storage.
 
 ---
 
@@ -60,6 +61,11 @@ creation_rules:
     age: "age1YOUR_PUBLIC_KEY..."
 ```
 
+Generate a secure passphrase for OpenTofu client-side state encryption (minimum 16 characters):
+```bash
+openssl rand -base64 32
+```
+
 Create and encrypt your configuration:
 ```bash
 cp config/secrets.example.yaml config/secrets.yaml
@@ -68,6 +74,8 @@ cp config/secrets.example.yaml config/secrets.yaml
 # - rcon_password: Secure RCON password
 # - github_pat: GitHub Personal Access Token (with repo dispatch permissions)
 # - dns_token: deSEC API Token or IONOS API Key
+# - s3_bucket, s3_endpoint, s3_access_key, s3_secret_key: S3 backend configuration
+# - state_encryption_passphrase: The generated OpenTofu state encryption passphrase
 
 sops --encrypt --in-place config/secrets.yaml
 mv config/secrets.yaml config/secrets.enc.yaml
@@ -87,7 +95,15 @@ Under your repository's **Settings > Secrets and variables > Actions**, add the 
 
 > [!TIP]
 > **All provider tokens and remote state credentials live in SOPS!**
-> Tokens like `hcloud_token`, `dns_token`, `rcon_password`, and S3 backend credentials (`s3_bucket`, `s3_endpoint`, `s3_access_key`, `s3_secret_key`) are stored directly in `config/secrets.enc.yaml` and decrypted automatically during workflow runs.
+> Tokens like `hcloud_token`, `dns_token`, `rcon_password`, S3 backend credentials (`s3_bucket`, `s3_endpoint`, `s3_access_key`, `s3_secret_key`), and `state_encryption_passphrase` are stored directly in `config/secrets.enc.yaml` and decrypted automatically during workflow runs.
+
+#### Local OpenTofu Execution
+If you run OpenTofu commands locally from the `iac/` directory instead of GitHub Actions:
+```bash
+export TF_VAR_state_encryption_passphrase="YOUR_PASSPHRASE"
+tofu init -backend-config="bucket=..." -backend-config="endpoint=..." -backend-config="access_key=..." -backend-config="secret_key=..."
+tofu plan
+```
 
 ### 4. Customize Server Settings
 

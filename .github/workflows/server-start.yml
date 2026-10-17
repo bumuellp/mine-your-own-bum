@@ -42,6 +42,12 @@ jobs:
           S3_ENDPOINT=$(grep "^s3_endpoint:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
           S3_ACCESS_KEY=$(grep "^s3_access_key:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
           S3_SECRET_KEY=$(grep "^s3_secret_key:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
+          STATE_PASSPHRASE=$(grep "^state_encryption_passphrase:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
+
+          if [ -n "$STATE_PASSPHRASE" ]; then
+            echo "::add-mask::$STATE_PASSPHRASE"
+            echo "TF_VAR_state_encryption_passphrase=$STATE_PASSPHRASE" >> "$GITHUB_ENV"
+          fi
 
           echo "bucket=$S3_BUCKET" >> "$GITHUB_OUTPUT"
           echo "endpoint=$S3_ENDPOINT" >> "$GITHUB_OUTPUT"

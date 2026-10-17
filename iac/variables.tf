@@ -30,3 +30,14 @@ variable "server_name" {
   type        = string
   default     = "mine-your-own-bum"
 }
+
+variable "state_encryption_passphrase" {
+  description = "Passphrase used to encrypt and decrypt OpenTofu state and plan files client-side"
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = length(var.state_encryption_passphrase) >= 16
+    error_message = "The state encryption passphrase must be at least 16 characters long."
+  }
+}
