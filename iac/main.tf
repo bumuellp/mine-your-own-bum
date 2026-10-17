@@ -20,7 +20,7 @@ provider "hcloud" {
 
 # 1. Persistent Storage (Retained across server destructions)
 module "volume" {
-  source   = "git::https://github.com/bumuellp/tofu-bum.git//modules/hcloud-volume?ref=v1.0.0"
+  source   = "git::https://github.com/bumuellp/tofu-bum.git//modules/hcloud-volume?ref=v1.0.1"
   name     = "${var.server_name}-data"
   size     = local.settings.server.volume_size_gb
   location = local.settings.server.location
@@ -59,7 +59,7 @@ locals {
 }
 
 module "firewall" {
-  source = "git::https://github.com/bumuellp/tofu-bum.git//modules/hcloud-firewall?ref=v1.0.0"
+  source = "git::https://github.com/bumuellp/tofu-bum.git//modules/hcloud-firewall?ref=v1.0.1"
   name   = "${var.server_name}-firewall"
   rules  = local.firewall_rules
 }
@@ -94,7 +94,7 @@ locals {
 
 # 4. Ephemeral Compute Instance
 module "server" {
-  source       = "git::https://github.com/bumuellp/tofu-bum.git//modules/hcloud-ephemeral-server?ref=v1.0.0"
+  source       = "git::https://github.com/bumuellp/tofu-bum.git//modules/hcloud-ephemeral-server?ref=v1.0.1"
   name         = var.server_name
   server_type  = local.settings.server.server_type
   image        = "docker-ce"
