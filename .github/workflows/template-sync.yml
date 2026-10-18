@@ -10,7 +10,7 @@ name: Template Sync
 permissions:
   contents: write
   pull-requests: write
-  workflows: write
+  actions: write
 
 jobs:
   sync:
