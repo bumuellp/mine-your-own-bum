@@ -10,6 +10,7 @@ name: Template Sync
 permissions:
   contents: write
   pull-requests: write
+  workflows: write
 
 jobs:
   sync:
@@ -32,4 +33,5 @@ jobs:
           pr_title: 'chore(template): sync updates from upstream mine-your-own-bum'
           pr_commit_msg: 'chore(template): sync upstream changes'
           pr_branch_name_prefix: template-sync
-          github_token: ${{ secrets.PAT_TEMPLATE_SYNC || secrets.GITHUB_TOKEN }}
+          source_gh_token: ${{ secrets.PAT_TEMPLATE_SYNC || secrets.GITHUB_TOKEN }}
+          target_gh_token: ${{ secrets.PAT_TEMPLATE_SYNC || secrets.GITHUB_TOKEN }}
