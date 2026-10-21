@@ -12,12 +12,12 @@ services:
       TYPE: "PAPER"
       VERSION: "${minecraft_version}"
       MEMORY: "${jvm_memory}"
-      MOTD: ${jsonencode(motd)}
+      MOTD: ${replace(jsonencode(motd), "$", "$$")}
       MAX_PLAYERS: "${max_players}"
       DIFFICULTY: "${difficulty}"
       ENABLE_RCON: "true"
       RCON_PORT: "25575"
-      RCON_PASSWORD: ${jsonencode(rcon_password)}
+      RCON_PASSWORD: ${replace(jsonencode(rcon_password), "$", "$$")}
       STOP_SERVER_ANNOUNCE_DELAY: "15"
       PLUGINS: |
 %{ for p in plugins ~}
@@ -44,7 +44,7 @@ services:
     environment:
       RCON_HOST: "mc-server"
       RCON_PORT: "25575"
-      RCON_PASSWORD: ${jsonencode(rcon_password)}
+      RCON_PASSWORD: ${replace(jsonencode(rcon_password), "$", "$$")}
       INITIAL_DELAY: "${backup_initial_delay}"
       BACKUP_INTERVAL: "${backup_interval}"
       PRUNE_BACKUPS_COUNT: "${backup_retention_count}"
@@ -55,10 +55,10 @@ services:
       RCLONE_REMOTE: "backup:${backup_s3_bucket}"
       RCLONE_DEST_DIR: "minecraft-backups"
       RCLONE_CONFIG_BACKUP_TYPE: "s3"
-      RCLONE_CONFIG_BACKUP_PROVIDER: ${jsonencode(backup_s3_provider)}
-      RCLONE_CONFIG_BACKUP_ENDPOINT: ${jsonencode(backup_s3_endpoint)}
-      RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID: ${jsonencode(backup_s3_access_key)}
-      RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY: ${jsonencode(backup_s3_secret_key)}
+      RCLONE_CONFIG_BACKUP_PROVIDER: ${replace(jsonencode(backup_s3_provider), "$", "$$")}
+      RCLONE_CONFIG_BACKUP_ENDPOINT: ${replace(jsonencode(backup_s3_endpoint), "$", "$$")}
+      RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID: ${replace(jsonencode(backup_s3_access_key), "$", "$$")}
+      RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY: ${replace(jsonencode(backup_s3_secret_key), "$", "$$")}
 %{ else ~}
       BACKUP_METHOD: "tar"
 %{ endif ~}

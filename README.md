@@ -171,7 +171,7 @@ minecraft:
 
 dns:
   enabled: true
-  provider: "ionos"            # "desec" or "ionos"
+  provider: "desec"            # "desec" or "ionos"
   domain: "example.com"        # Registered apex / zone domain
   subname: "mc"                # Subdomain prefix (e.g. mc.example.com)
   ttl: 60
