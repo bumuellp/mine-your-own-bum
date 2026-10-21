@@ -9,9 +9,10 @@ services:
       - "19132:19132/udp"
     environment:
       EULA: "TRUE"
-      TYPE: "PAPER"
+      TYPE: "${server_type}"
       VERSION: "${minecraft_version}"
       MEMORY: "${jvm_memory}"
+      USE_AIKAR_FLAGS: "true"
       MOTD: ${replace(jsonencode(motd), "$", "$$")}
       MAX_PLAYERS: "${max_players}"
       DIFFICULTY: "${difficulty}"
@@ -33,6 +34,12 @@ services:
       OPS: |
 %{ for o in ops ~}
         ${o}
+%{ endfor ~}
+%{ endif ~}
+%{ if length(modrinth_projects) > 0 ~}
+      MODRINTH_PROJECTS: |
+%{ for m in modrinth_projects ~}
+        ${m}
 %{ endfor ~}
 %{ endif ~}
       PLUGINS: |

@@ -1,4 +1,16 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>bumuellp/.github:renovate-config"]
+  "extends": ["github>bumuellp/.github:renovate-config"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": [
+        "(^|/)config/settings\\.yaml$",
+        "(^|/)config/settings\\.example\\.yaml$"
+      ],
+      "matchStrings": [
+        "version:\\s*[\"']?(?<currentValue>[^\"'\\s]+)[\"']?\\s*#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)"
+      ]
+    }
+  ]
 }

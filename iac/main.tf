@@ -74,6 +74,7 @@ module "firewall" {
 # 3. Cloud-Init Manifest & Compose Orchestration
 locals {
   docker_compose = templatefile("${path.module}/templates/docker-compose.yml.tftpl", {
+    server_type            = local.settings.minecraft.server_type
     minecraft_version      = local.settings.minecraft.version
     jvm_memory             = local.settings.minecraft.jvm_memory
     motd                   = local.settings.minecraft.motd
@@ -83,6 +84,7 @@ locals {
     whitelist              = local.settings.minecraft.whitelist
     ops                    = local.settings.minecraft.ops
     rcon_password          = local.rcon_password
+    modrinth_projects      = local.settings.minecraft.modrinth_projects
     plugins                = local.settings.minecraft.plugins
     backup_enabled         = local.settings.backup.enabled
     backup_interval        = local.settings.backup.interval

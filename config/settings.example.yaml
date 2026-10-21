@@ -8,7 +8,8 @@ server:
   ssh_allowed_ips: []  # Add CIDRs e.g. ["203.0.113.50/32"] or leave empty to drop TCP 22
 
 minecraft:
-  version: "LATEST"
+  server_type: "FABRIC"
+  version: "1.21.4"  # renovate: datasource=github-releases depName=PaperMC/Paper
   jvm_memory: "6G"
   motd: "Mine Your Own Bum - On-Demand Crossplay Server"
   max_players: 20
@@ -22,12 +23,15 @@ minecraft:
   ops:
     - "Steve"
     # - "00000000-0000-0000-0009-0123456789ab"  # Bedrock Gamertag
-  plugins:
-    # Crossplay: Dynamic endpoints track the latest stable builds to prevent Bedrock client lockouts
-    - "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
-    - "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot"
-    # Example: Additional custom plugin or mod download URLs (or pinned GitHub release jars)
-    # - "https://github.com/MilkBowl/Vault/releases/download/1.7.3/Vault.jar"
+  modrinth_projects:
+    - "fabric-api"
+    - "lithium"
+    - "ferrite-core"
+    - "krypton"
+    - "carpet"
+    - "geyser"
+    - "floodgate"
+  plugins: []
 
 dns:
   enabled: false
