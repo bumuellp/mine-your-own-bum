@@ -225,6 +225,44 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 | `interval` | `string` | `"1h"` | Interval between recurring snapshots while the server is actively running. |
 | `initial_delay` | `string` | `"5m"` | Delay after boot before taking the first baseline snapshot. |
 
+#### 🛡️ Player Access Control & Whitelisting (Crossplay)
+
+When `whitelist_enabled: true` is configured, only authorized players can connect to the server:
+* **Java Edition Players**: Add standard Minecraft usernames (e.g. `"Steve"`). The server container resolves Mojang UUIDs automatically.
+* **Bedrock Edition Players (Geyser / Floodgate)**: Because Mojang APIs do not index Xbox Gamertags, Bedrock players use deterministic Floodgate UUIDs (`00000000-0000-0000-xxxx-xxxxxxxxxxxx` derived from their numeric Xbox User ID).
+
+There are three ways to obtain the Floodgate UUID or whitelist Bedrock players:
+
+##### 1. Built-in Helper Script (Fastest for Git Config)
+Run the included helper script to resolve any Xbox Gamertag into its Floodgate UUID:
+```bash
+./scripts/get-bedrock-uuid.sh <Gamertag>
+```
+Output:
+```text
+Gamertag:       Alex
+Xbox XUID:      2535412345678901
+Floodgate UUID: 00000000-0000-0000-0009-011234567890
+
+Add to config/settings.yaml:
+  whitelist:
+    - "00000000-0000-0000-0009-011234567890"  # .Alex (Bedrock)
+```
+
+##### 2. Web Lookup Tools
+Look up Gamertags and Floodgate UUIDs online via public profile tools:
+* [CraftMC Player Lookup](https://craftmc.net): Search by Xbox Gamertag to view profile details, XUID, and Floodgate UUID.
+* [mc-api.io](https://mc-api.io): Cross-edition player profile and UUID resolver.
+
+##### 3. In-Game Whitelist Management (While Playing)
+If you or another player is already configured as an operator (`ops`), you can manage players directly in-game without editing Git files:
+* **Native Floodgate Command**: Run `/fwhitelist add <Gamertag>` in-game or via console. Floodgate automatically resolves the player and writes them to `whitelist.json` on the persistent storage volume.
+* **Temporary First-Join Workaround**:
+  1. Temporarily pause the whitelist: `/whitelist off`
+  2. Have the Bedrock friend connect to the server once (allowing Geyser/Floodgate to register their profile).
+  3. Add them: `/whitelist add .<Gamertag>` (or `/fwhitelist add <Gamertag>`).
+  4. Re-enable the whitelist: `/whitelist on`. All changes persist across server restarts.
+
 ---
 
 ## 🚀 Starting and Stopping the Server
