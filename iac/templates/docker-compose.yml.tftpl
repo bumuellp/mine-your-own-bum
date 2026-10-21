@@ -37,6 +37,7 @@ services:
 %{ endfor ~}
 %{ endif ~}
 %{ if length(modrinth_projects) > 0 ~}
+      MODRINTH_ALLOWED_VERSION_TYPE: "beta"
       MODRINTH_PROJECTS: |
 %{ for m in modrinth_projects ~}
         ${m}
