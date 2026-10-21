@@ -121,6 +121,36 @@ else
 fi
 
 # ------------------------------------------------------------------------------
+# 2b. Idle Watchdog GitHub PAT (auto-stop dispatch)
+# ------------------------------------------------------------------------------
+ALWAYS_ON_SETTING="$(get_setting "server" "always_on" || echo "false")"
+WATCHDOG_PAT="${PAT_WATCHDOG:-$(get_secret "github_pat")}"
+TARGET_REPO="${GITHUB_REPOSITORY:-}"
+if [ -z "$TARGET_REPO" ]; then
+	TARGET_REPO="$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##' || true)"
+fi
+
+if [ "$ALWAYS_ON_SETTING" = "true" ]; then
+	echo -e "${BLUE}[i] Idle Watchdog:${NC} always_on is true (auto-stop disabled, skipping PAT check)."
+elif [ -z "$WATCHDOG_PAT" ] || [[ "$WATCHDOG_PAT" == *"YOUR_"* ]]; then
+	echo -e "${YELLOW}[!] Idle Watchdog:${NC} No github_pat configured. Idle server will stop Minecraft but the VM will NOT be destroyed (keeps billing)."
+elif [ -z "$TARGET_REPO" ]; then
+	echo -e "${YELLOW}[!] Idle Watchdog:${NC} Could not determine GitHub repository (set GITHUB_REPOSITORY). Skipping PAT check."
+else
+	PAT_HTTP="$(curl -s -o /dev/null -w "%{http_code}" \
+		-H "Authorization: Bearer ${WATCHDOG_PAT}" \
+		-H "Accept: application/vnd.github+json" \
+		"https://api.github.com/repos/${TARGET_REPO}/actions/workflows/server-stop.yml")"
+	if [ "$PAT_HTTP" = "200" ]; then
+		echo -e "${GREEN}[✓] Idle Watchdog PAT:${NC} Token can access '${TARGET_REPO}' server-stop.yml workflow."
+	else
+		echo -e "${RED}[✗] Idle Watchdog PAT:${NC} Token cannot access '${TARGET_REPO}' (HTTP ${PAT_HTTP})."
+		echo "    Grant the fine-grained PAT access to this repository with 'Actions: Read and write' permission."
+		ALL_OK=1
+	fi
+fi
+
+# ------------------------------------------------------------------------------
 # 3. Dynamic DNS Provider API
 # ------------------------------------------------------------------------------
 DNS_ENABLED="$(get_setting "dns" "enabled")"
