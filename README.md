@@ -155,7 +155,7 @@ cp config/settings.example.yaml config/settings.yaml
 Edit `config/settings.yaml` with your preferred server specifications and commit it to Git:
 ```yaml
 server:
-  server_type: "cpx31"         # 4 vCPU AMD, 8 GB RAM (~€0.034/hour)
+  server_type: "cax21"         # 4 vCPU ARM, 8 GB RAM (~€0.017/hour)
   location: "fsn1"             # Falkenstein, Germany (or nbg1, hel1)
   volume_size_gb: 10           # Persistent block volume
   always_on: false             # Set to true to disable auto-stop
@@ -183,7 +183,7 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 ##### `server`
 | Parameter | Type | Default | Description |
 | :--- | :---: | :---: | :--- |
-| `server_type` | `string` | `"cpx31"` | Hetzner Cloud VM model (e.g. `cx22`, `cpx21`, `cpx31`). `cpx31` (4 vCPU AMD, 8 GB RAM) is recommended for smooth Paper chunk generation and crossplay. |
+| `server_type` | `string` | `"cax21"` | Hetzner Cloud VM model (e.g. `cax21`, `cpx22`, `cpx32`). `cax21` (4 vCPU ARM Ampere, 8 GB RAM) is recommended for smooth Paper chunk generation and cost efficiency. |
 | `location` | `string` | `"fsn1"` | Hetzner datacenter location (`fsn1` = Falkenstein, `nbg1` = Nuremberg, `hel1` = Helsinki). *Note: Persistent volumes are currently available in EU regions.* |
 | `volume_size_gb` | `number` | `10` | Size of the persistent Hetzner block volume retaining Minecraft world data across shutdowns (minimum 10 GB). |
 | `always_on` | `bool` | `false` | When `true`, disables the auto-stop watchdog; the VM stays running until stopped manually via workflow. |
@@ -194,7 +194,7 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 | Parameter | Type | Default | Description |
 | :--- | :---: | :---: | :--- |
 | `version` | `string` | `"LATEST"` | Target PaperMC version (e.g. `"LATEST"`, `"1.21.1"`). |
-| `jvm_memory` | `string` | `"6G"` | Java heap memory allocation (`-Xmx`). On an 8 GB RAM node (`cpx31`), set to `"6G"` to leave headroom for OS, Docker, and off-heap Geyser Bedrock translation. |
+| `jvm_memory` | `string` | `"6G"` | Java heap memory allocation (`-Xmx`). On an 8 GB RAM node (`cax21`), set to `"6G"` to leave headroom for OS, Docker, and off-heap Geyser Bedrock translation. |
 | `motd` | `string` | `"..."` | Message of the day displayed in the multiplayer server list. |
 | `max_players` | `number` | `20` | Maximum simultaneous players allowed. |
 | `difficulty` | `string` | `"normal"` | In-game difficulty (`peaceful`, `easy`, `normal`, `hard`). |

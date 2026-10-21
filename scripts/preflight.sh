@@ -90,6 +90,19 @@ else
 		"https://api.hetzner.cloud/v1/servers")"
 	if [ "$HTTP_CODE" -eq 200 ]; then
 		echo -e "${GREEN}[✓] Hetzner Cloud API:${NC} Token authenticated successfully (HTTP 200)."
+
+		SERVER_TYPE="$(get_setting "server" "server_type" || echo "cax21")"
+		LOCATION="$(get_setting "server" "location" || echo "fsn1")"
+		if command -v jq >/dev/null 2>&1; then
+			TYPE_RESP="$(curl -s -H "Authorization: Bearer ${HCLOUD_TOKEN}" "https://api.hetzner.cloud/v1/server_types?name=${SERVER_TYPE}")"
+			AVAIL="$(echo "$TYPE_RESP" | jq -r --arg loc "$LOCATION" '[.server_types[0].locations[]? | select(.name == $loc) | .available][0]')"
+			if [ "$AVAIL" = "true" ]; then
+				echo -e "${GREEN}[✓] Hetzner Server Sizing:${NC} Model '${SERVER_TYPE}' is available in '${LOCATION}'."
+			elif [ "$AVAIL" = "false" ]; then
+				echo -e "${RED}[✗] Hetzner Server Sizing:${NC} Server Type '${SERVER_TYPE}' is unavailable in '${LOCATION}'."
+				ALL_OK=1
+			fi
+		fi
 	else
 		echo -e "${RED}[✗] Hetzner Cloud API:${NC} Authentication failed (HTTP ${HTTP_CODE}). Check hcloud_token."
 		ALL_OK=1
