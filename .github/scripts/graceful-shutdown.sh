@@ -20,7 +20,7 @@ HCLOUD_TOKEN="${HCLOUD_TOKEN:-}"
 if [ -z "$HCLOUD_TOKEN" ]; then
 	SECRETS_FILE="${REPO_ROOT}/config/secrets.yaml"
 	if [ -f "$SECRETS_FILE" ]; then
-		HCLOUD_TOKEN="$(grep "^hcloud_token:" "$SECRETS_FILE" | cut -d'"' -f2 || true)"
+		HCLOUD_TOKEN="$(awk -v k="hcloud_token" '$1 == k ":" { sub(/^[^:]*:[ \t]*/, ""); sub(/#.*$/, ""); gsub(/^[ \t]+|[ \t]+$/, ""); gsub(/^["\x27]|["\x27]$/, ""); print; exit }' "$SECRETS_FILE")"
 	fi
 fi
 

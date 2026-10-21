@@ -44,11 +44,24 @@ jobs:
           SECRETS_FILE="config/secrets.yaml"
           [ -f "$SECRETS_FILE" ] || SECRETS_FILE="config/secrets.example.yaml"
 
-          S3_BUCKET=$(grep "^s3_bucket:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
-          S3_ENDPOINT=$(grep "^s3_endpoint:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
-          S3_ACCESS_KEY=$(grep "^s3_access_key:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
-          S3_SECRET_KEY=$(grep "^s3_secret_key:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
-          STATE_PASSPHRASE=$(grep "^state_encryption_passphrase:" "$SECRETS_FILE" | cut -d'"' -f2 || true)
+          get_sec() {
+            awk -v k="$1" '
+              $1 == k ":" {
+                sub(/^[^:]*:[ \t]*/, "")
+                sub(/#.*$/, "")
+                gsub(/^[ \t]+|[ \t]+$/, "")
+                gsub(/^["\x27]|["\x27]$/, "")
+                print
+                exit
+              }
+            ' "$SECRETS_FILE"
+          }
+
+          S3_BUCKET="$(get_sec s3_bucket)"
+          S3_ENDPOINT="$(get_sec s3_endpoint)"
+          S3_ACCESS_KEY="$(get_sec s3_access_key)"
+          S3_SECRET_KEY="$(get_sec s3_secret_key)"
+          STATE_PASSPHRASE="$(get_sec state_encryption_passphrase)"
 
           if [ -n "$STATE_PASSPHRASE" ]; then
             echo "::add-mask::$STATE_PASSPHRASE"
