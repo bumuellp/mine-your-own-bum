@@ -104,9 +104,16 @@ if [ "$CURRENT_TICKS" -ge "$IDLE_TIMEOUT_MINUTES" ]; then
 	docker exec mc-server rcon-cli stop || true
 	sleep 10
 
-	# 3. Stop container stack
+	# 3. If backup sidecar is active, trigger session-end snapshot
+	if docker ps -q --filter "name=mc-backup" | grep -q .; then
+		log_console "Triggering session-end backup via mc-backup..."
+		docker exec mc-backup backup-now || true
+	fi
+
+	# 4. Stop container stack
+	docker stop mc-backup || true
 	docker stop mc-server || true
 
-	# 4. Trigger GitHub Actions stop workflow
+	# 5. Trigger GitHub Actions stop workflow
 	dispatch_stop_workflow
 fi

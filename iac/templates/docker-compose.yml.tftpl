@@ -37,15 +37,31 @@ services:
     container_name: mc-backup
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     depends_on:
       mc-server:
         condition: service_healthy
     environment:
-      BACKUP_INTERVAL: "${backup_cron}"
       RCON_HOST: "mc-server"
       RCON_PORT: "25575"
       RCON_PASSWORD: "${rcon_password}"
-      INITIAL_DELAY: "10m"
+      INITIAL_DELAY: "${backup_initial_delay}"
+      BACKUP_INTERVAL: "${backup_interval}"
+      PRUNE_BACKUPS_COUNT: "${backup_retention_count}"
+      TAR_COMPRESS_METHOD: "zstd"
+      ZSTD_PARAMETERS: "-3 --long"
+%{ if backup_s3_bucket != "" ~}
+      BACKUP_METHOD: "rclone"
+      RCLONE_REMOTE: "r2:${backup_s3_bucket}"
+      RCLONE_DEST_DIR: "minecraft-backups"
+      RCLONE_CONFIG_R2_TYPE: "s3"
+      RCLONE_CONFIG_R2_PROVIDER: "Cloudflare"
+      RCLONE_CONFIG_R2_ENDPOINT: "${backup_s3_endpoint}"
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: "${backup_s3_access_key}"
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: "${backup_s3_secret_key}"
+%{ else ~}
+      BACKUP_METHOD: "tar"
+%{ endif ~}
     volumes:
       - /mnt/mc-data:/data:ro
       - /mnt/mc-data/backups:/backups

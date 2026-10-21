@@ -35,6 +35,9 @@ jobs:
           file: config/secrets.enc.yaml
           output: config/secrets.yaml
 
+      - name: Validate Pre-flight Credentials & Configuration
+        run: ./scripts/preflight.sh
+
       - name: Parse S3 Backend Configuration
         id: s3_cfg
         run: |

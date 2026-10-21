@@ -33,7 +33,9 @@ It combines ephemeral compute instances with persistent block volume retention, 
 ```
 
 - **Ephemeral Compute & Persistent Storage**: Compute instances are destroyed when not in use. World data, player states, and configs reside on an independent Hetzner block volume (`/mnt/mc-data`) that survives server shutdowns.
-- **Auto-Stop Idle Watchdog**: A background systemd daemon checks player count via RCON. If zero players are active for a configurable idle timeout (default: 15 minutes), the server cleanly saves world data and dispatches a GitHub Action to destroy the VM.
+- **Cost-Optimized Pay-Per-Play Model**: When stopped, compute costs drop to **€0.00/h**. Hetzner Cloud Firewalls are **100% free**. You only pay for the idle 10 GB persistent block volume (~€0.45/month).
+- **Auto-Stop Idle Watchdog**: A background systemd daemon checks player count via RCON. If zero players are active for your configured idle timeout (`idle_timeout_minutes`), the server cleanly saves world data and dispatches a GitHub Action to destroy the VM.
+- **Zero-Loss Graceful Teardown**: Both automated idle shutdowns and manual teardowns via `server-stop.yml` issue an ACPI power signal, allowing systemd and Docker to trap SIGTERM, cleanly flush world chunks via RCON, and unmount the filesystem before the VM is deleted.
 - **Java & Bedrock Crossplay**: Powered by PaperMC with GeyserMC and Floodgate, allowing PC, mobile, and console players to play together seamlessly on standard ports (`25565` Java, `19132` Bedrock).
 - **Dynamic DNS Integration**: Built-in support for **deSEC.io** and **IONOS Domain APIs** automatically publishes the server's public IPv4/IPv6 on start and removes it on shutdown.
 - **Encrypted Secrets with SOPS + Age**: Keep API tokens safe directly inside your repository via GitOps encryption.
@@ -210,8 +212,10 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 ##### `backup`
 | Parameter | Type | Default | Description |
 | :--- | :---: | :---: | :--- |
-| `enabled` | `bool` | `false` | Enable automated Google Drive cloud backup container. |
-| `cron` | `string` | `"0 4 * * *"` | Cron schedule for recurring world snapshots while the server is running. |
+| `enabled` | `bool` | `false` | Enable automated off-site cloud backups to Cloudflare R2 / S3 via `mc-backup` sidecar. |
+| `retention_count` | `number` | `10` | Number of recent backups to keep. Automatically prunes older backups both locally and in remote R2 storage. |
+| `interval` | `string` | `"1h"` | Interval between recurring snapshots while the server is actively running. |
+| `initial_delay` | `string` | `"5m"` | Delay after boot before taking the first baseline snapshot. |
 
 ---
 
@@ -221,14 +225,16 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 1. Go to the **Actions** tab in GitHub.
 2. Select **Start Minecraft Server**.
 3. Click **Run workflow**.
-4. Once completed, the **Job Summary** displays:
+4. The workflow runs automated pre-flight checks (`./scripts/preflight.sh`) to validate all credentials, S3 backend connectivity, and DNS zones before provisioning.
+5. Once provisioned, a TCP healthcheck polls port `25565` to confirm Minecraft is online before completing.
+6. Once completed, the **Job Summary** displays:
    - Server Public IPv4 / IPv6
    - Full DNS Domain (FQDN)
    - Connection URLs for Java (`mc.example.com:25565`) and Bedrock (`mc.example.com:19132`)
 
 ### Stopping
-- **Automatic**: Stop occurs automatically when no players are connected for `idle_timeout_minutes`.
-- **Manual**: Go to **Actions > Stop Minecraft Server > Run workflow**.
+- **Automatic**: Stop occurs automatically when no players are connected for `idle_timeout_minutes` (the watchdog flushes world chunks via RCON and dispatches teardown).
+- **Manual**: Go to **Actions > Stop Minecraft Server > Run workflow** (dispatches an ACPI shutdown signal to flush dirty chunks and unmount storage before destroying the VM).
 
 ---
 
@@ -262,6 +268,13 @@ Console editions of Minecraft Bedrock do not include an "Add External Server" bu
   2. On your console, open Minecraft and navigate to **Friends > LAN Games**.
   3. The server will appear automatically as a joinable local game!
 - **Alternative**: Configure DNS redirection via public tools like BedrockConnect or MC-Server-Connector.
+
+---
+
+## 🧪 Automated Testing & Continuous Verification
+
+- **Fail-Fast Pre-Flight Verification**: Run `./scripts/preflight.sh` locally or let GitHub Actions run it as a gatekeeper on server startup to validate Hetzner tokens, OpenTofu state encryption, DNS records, and template syntax in under 10 seconds.
+- **Container Smoke Testing**: Pull requests updating `iac/templates/docker-compose.yml.tftpl` or server configs (such as Renovate bumping `itzg/minecraft-server`) trigger an automated container test (`.github/workflows/container-smoke-test.yml`). It renders the stack, spins up a test container, and verifies RCON communication before merging.
 
 ---
 

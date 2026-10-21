@@ -212,6 +212,27 @@ else
 			rm -f "$RENDERED_COMPOSE"
 		fi
 
+		# Cloud backup configuration check
+		BACKUP_ENABLED=$(get_setting "backup" "enabled" || echo "false")
+		if [ "$BACKUP_ENABLED" = "true" ]; then
+			DEDICATED_BUCKET="$(get_secret "backup_s3_bucket")"
+			if [ -n "$DEDICATED_BUCKET" ]; then
+				DEDICATED_ENDPOINT="$(get_secret "backup_s3_endpoint")"
+				DEDICATED_KEY="$(get_secret "backup_s3_access_key")"
+				DEDICATED_SECRET="$(get_secret "backup_s3_secret_key")"
+				if [ -z "$DEDICATED_ENDPOINT" ] || [ -z "$DEDICATED_KEY" ] || [ -z "$DEDICATED_SECRET" ]; then
+					echo -e "${RED}[✗] Backup Storage:${NC} Dedicated backup bucket '${DEDICATED_BUCKET}' is missing endpoint, access_key, or secret_key."
+					ALL_OK=1
+				else
+					echo -e "${GREEN}[✓] Backup S3 Target:${NC} Dedicated S3/R2 backup bucket '${DEDICATED_BUCKET}' verified."
+				fi
+			else
+				echo -e "${GREEN}[✓] Backup S3 Target:${NC} Backups enabled using primary S3 bucket '${S3_BUCKET}' (/minecraft-backups/)."
+			fi
+		else
+			echo -e "${BLUE}[i] Backup Storage:${NC} Automated cloud backups are disabled in settings.yaml."
+		fi
+
 		rm -rf iac/.terraform iac/.terraform.lock.hcl
 	else
 		rm -rf iac/.terraform iac/.terraform.lock.hcl

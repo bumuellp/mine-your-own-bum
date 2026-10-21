@@ -12,6 +12,12 @@ locals {
   hcloud_token  = coalesce(var.hcloud_token, try(data.sops_file.secrets[0].data["hcloud_token"], null))
   rcon_password = coalesce(var.rcon_password, try(data.sops_file.secrets[0].data["rcon_password"], "secret-mc-rcon-pass"))
   github_pat    = try(coalesce(var.github_pat, try(data.sops_file.secrets[0].data["github_pat"], null)), "")
+
+  # S3 / R2 Backup Configuration
+  backup_s3_bucket     = coalesce(try(data.sops_file.secrets[0].data["backup_s3_bucket"], null), try(data.sops_file.secrets[0].data["s3_bucket"], null), "")
+  backup_s3_endpoint   = coalesce(try(data.sops_file.secrets[0].data["backup_s3_endpoint"], null), try(data.sops_file.secrets[0].data["s3_endpoint"], null), "")
+  backup_s3_access_key = coalesce(try(data.sops_file.secrets[0].data["backup_s3_access_key"], null), try(data.sops_file.secrets[0].data["s3_access_key"], null), "")
+  backup_s3_secret_key = coalesce(try(data.sops_file.secrets[0].data["backup_s3_secret_key"], null), try(data.sops_file.secrets[0].data["s3_secret_key"], null), "")
 }
 
 provider "hcloud" {
@@ -67,15 +73,21 @@ module "firewall" {
 # 3. Cloud-Init Manifest & Compose Orchestration
 locals {
   docker_compose = templatefile("${path.module}/templates/docker-compose.yml.tftpl", {
-    minecraft_version = local.settings.minecraft.version
-    jvm_memory        = local.settings.minecraft.jvm_memory
-    motd              = local.settings.minecraft.motd
-    max_players       = local.settings.minecraft.max_players
-    difficulty        = local.settings.minecraft.difficulty
-    rcon_password     = local.rcon_password
-    plugins           = local.settings.minecraft.plugins
-    backup_enabled    = local.settings.backup.enabled
-    backup_cron       = local.settings.backup.cron
+    minecraft_version      = local.settings.minecraft.version
+    jvm_memory             = local.settings.minecraft.jvm_memory
+    motd                   = local.settings.minecraft.motd
+    max_players            = local.settings.minecraft.max_players
+    difficulty             = local.settings.minecraft.difficulty
+    rcon_password          = local.rcon_password
+    plugins                = local.settings.minecraft.plugins
+    backup_enabled         = local.settings.backup.enabled
+    backup_interval        = local.settings.backup.interval
+    backup_initial_delay   = local.settings.backup.initial_delay
+    backup_retention_count = local.settings.backup.retention_count
+    backup_s3_bucket       = local.backup_s3_bucket
+    backup_s3_endpoint     = local.backup_s3_endpoint
+    backup_s3_access_key   = local.backup_s3_access_key
+    backup_s3_secret_key   = local.backup_s3_secret_key
   })
 
   cloud_init = templatefile("${path.module}/templates/cloud-init.yaml.tftpl", {

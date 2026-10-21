@@ -29,4 +29,6 @@ dns:
 
 backup:
   enabled: false
-  cron: "0 4 * * *"
+  retention_count: 10  # Number of snapshots to retain (prunes older ones locally & in S3/R2)
+  interval: "1h"       # Recurring snapshot interval while server is online
+  initial_delay: "5m"  # Delay after boot before taking first snapshot
