@@ -77,12 +77,14 @@ jobs:
         run: |
           tofu refresh
 
+          SERVER_ID=$(tofu output -raw server_id 2>/dev/null || true)
           DNS_TOKEN=$(tofu output -raw dns_token)
           if [ -n "$DNS_TOKEN" ]; then
             echo "::add-mask::$DNS_TOKEN"
           fi
 
           cat << EOF >> "$GITHUB_OUTPUT"
+          server_id=$SERVER_ID
           enabled=$(tofu output -raw dns_enabled)
           provider=$(tofu output -raw dns_provider)
           domain=$(tofu output -raw dns_domain)
@@ -112,6 +114,11 @@ jobs:
           subname: ${{ steps.dns_cfg.outputs.subname }}
           type: AAAA
           action: delete
+
+      - name: Graceful Server ACPI Shutdown
+        run: .github/scripts/graceful-shutdown.sh
+        env:
+          SERVER_ID: ${{ steps.dns_cfg.outputs.server_id }}
 
       - name: OpenTofu Destroy Server (Targeted)
         working-directory: iac

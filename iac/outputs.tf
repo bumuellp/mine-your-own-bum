@@ -1,3 +1,8 @@
+output "server_id" {
+  description = "ID of the ephemeral Minecraft compute instance in Hetzner Cloud"
+  value       = module.server.id
+}
+
 output "server_ipv4" {
   description = "Public IPv4 address of the ephemeral Minecraft server"
   value       = module.server.ipv4_address
