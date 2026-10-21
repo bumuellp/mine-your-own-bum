@@ -6,6 +6,12 @@
 # ==============================================================================
 set -euo pipefail
 
+log() {
+	echo "[mc-bootstrap] $*" | tee -a /dev/kmsg /dev/console 2>/dev/null || echo "[mc-bootstrap] $*"
+}
+
+trap 'log "[FATAL] Volume bootstrap failed at line $LINENO (exit code: $?)"' ERR
+
 VOLUME_ID="${1:-${VOLUME_ID:-}}"
 MOUNT_POINT="${2:-${MOUNT_POINT:-/mnt/mc-data}}"
 
@@ -16,10 +22,10 @@ else
 	DEVICE="$(find /dev/disk/by-id/ -name "scsi-0HC_Volume_*" 2>/dev/null | head -n 1 || true)"
 fi
 
-echo "Waiting for persistent block storage device: ${DEVICE:-<unknown>}..."
+log "Waiting for persistent block storage device: ${DEVICE:-<unknown>}..."
 for i in $(seq 1 30); do
 	if [ -n "$DEVICE" ] && [ -b "$DEVICE" ]; then
-		echo "Found block device: $DEVICE on attempt $i."
+		log "Found block device: $DEVICE on attempt $i."
 		break
 	fi
 	sleep 2
@@ -29,7 +35,7 @@ for i in $(seq 1 30); do
 done
 
 if [ -z "$DEVICE" ] || [ ! -b "$DEVICE" ]; then
-	echo "ERROR: Persistent block volume device was not found after 60 seconds." >&2
+	log "ERROR: Persistent block volume device was not found after 60 seconds."
 	exit 1
 fi
 
@@ -37,20 +43,20 @@ mkdir -p "$MOUNT_POINT"
 
 # Check if filesystem already exists
 if ! blkid "$DEVICE" >/dev/null 2>&1; then
-	echo "Device $DEVICE is unformatted. Formatting with ext4 (label: mc-data)..."
+	log "Device $DEVICE is unformatted. Formatting with ext4 (label: mc-data)..."
 	mkfs.ext4 -F -L mc-data "$DEVICE"
 else
-	echo "Existing filesystem detected on $DEVICE. Preserving world data."
+	log "Existing filesystem detected on $DEVICE. Preserving world data."
 fi
 
 # Add persistent mount to /etc/fstab if missing
 FSTAB_ENTRY="$DEVICE $MOUNT_POINT ext4 defaults,nofail,discard 0 2"
 if ! grep -qs "$MOUNT_POINT" /etc/fstab; then
-	echo "Adding persistent mount entry to /etc/fstab..."
+	log "Adding persistent mount entry to /etc/fstab..."
 	echo "$FSTAB_ENTRY" >>/etc/fstab
 fi
 
 # Mount volume and verify
 mount -a
 mkdir -p "${MOUNT_POINT}/backups"
-echo "Persistent volume successfully mounted at ${MOUNT_POINT}."
+log "Persistent volume successfully mounted at ${MOUNT_POINT}."

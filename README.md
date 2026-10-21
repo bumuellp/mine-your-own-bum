@@ -43,55 +43,93 @@ It combines ephemeral compute instances with persistent block volume retention, 
 
 ## 🛠️ Quick Start & Setup Guide
 
+### Prerequisites (Local Administrator)
+To manage secrets and customize the server, install these standard CLI tools:
+- **[age](https://github.com/FiloSottile/age)**: Key generator and encryption tool (`age`, `age-keygen`).
+- **[SOPS](https://github.com/getsops/sops)** (`>= 3.9`): Secrets management CLI.
+- **[OpenTofu](https://opentofu.org/)** (`>= 1.7.0`): *Optional*, only needed if running IaC plans locally outside GitHub Actions.
+
 ### 1. Use This Template
 Click **"Use this template"** on GitHub to create your own private repository.
 
 ### 2. Configure Secrets with SOPS and Age
 
-Generate a new Age keypair on your local machine:
-```bash
-age-keygen -o key.txt
-```
-Note the public key (`age1...`) and private key (`AGE-SECRET-KEY-1...`).
+SOPS automatically looks for Age private keys in the standard XDG path `~/.config/sops/age/keys.txt`.
 
-Update `.sops.yaml` with your public key:
+#### Option A: Use an Existing Age Key
+If you already use Age on your machine, retrieve your existing public key:
+```bash
+age-keygen -y ~/.config/sops/age/keys.txt
+```
+*(Alternatively, check the `# public key: age1...` comment inside `~/.config/sops/age/keys.txt`).*
+
+#### Option B: Generate a New Age Key
+If you are setting up Age for the first time, generate a keypair directly into the default SOPS directory:
+```bash
+mkdir -p ~/.config/sops/age
+age-keygen -o ~/.config/sops/age/keys.txt
+```
+*(If you already have `keys.txt` and want a dedicated keypair for this repository, append it with `age-keygen >> ~/.config/sops/age/keys.txt`).*
+
+---
+
+#### Update `.sops.yaml`
+Update `.sops.yaml` in the repository root with your public key (`age1...`):
 ```yaml
 creation_rules:
-  - path_regex: config/secrets\.enc\.yaml$
+  - path_regex: config/secrets\.enc\.ya?ml$
     age: "age1YOUR_PUBLIC_KEY..."
 ```
 
-Generate a secure passphrase for OpenTofu client-side state encryption (minimum 16 characters):
+#### Generate OpenTofu State Encryption Passphrase
+Generate a cryptographically secure passphrase for OpenTofu client-side state encryption (minimum 16 characters):
 ```bash
 openssl rand -base64 32
 ```
 
-Create and encrypt your configuration:
-```bash
-cp config/secrets.example.yaml config/secrets.yaml
-# Edit config/secrets.yaml with your tokens:
-# - hcloud_token: Hetzner Cloud API token
-# - rcon_password: Secure RCON password
-# - github_pat: GitHub Personal Access Token (with repo dispatch permissions)
-# - dns_token: deSEC API Token or IONOS API Key
-# - s3_bucket, s3_endpoint, s3_access_key, s3_secret_key: S3 backend configuration
-# - state_encryption_passphrase: The generated OpenTofu state encryption passphrase
+#### Create and Encrypt Configuration
+1. Initialize the encrypted secrets file from the template:
+   ```bash
+   cp config/secrets.example.yaml config/secrets.enc.yaml
+   sops --encrypt --in-place config/secrets.enc.yaml
+   ```
+2. Open and edit your secrets safely in your `$EDITOR`:
+   ```bash
+   sops config/secrets.enc.yaml
+   ```
+   > [!TIP]
+   > `sops <file>` transparently decrypts the file in memory into your `$EDITOR` and re-encrypts it automatically on save. You never need to keep unencrypted plaintext files on disk.
 
-sops --encrypt --in-place config/secrets.yaml
-mv config/secrets.yaml config/secrets.enc.yaml
-```
+3. Fill in your provider credentials:
+   - `hcloud_token`: Hetzner Cloud API token
+   - `rcon_password`: Secure RCON password
+   - `github_pat`: Scoped GitHub Personal Access Token with repository `actions: write` scope (for VM idle watchdog auto-stop). Alternatively configure via GitHub Secret `PAT_WATCHDOG`.
+   - `dns_token`: deSEC API Token or IONOS API Key (note: IONOS keys must be in `<public_prefix>.<secret>` format separated by a dot)
+   - `s3_bucket`, `s3_endpoint`, `s3_access_key`, `s3_secret_key`: S3 backend configuration for OpenTofu state storage
+   - `state_encryption_passphrase`: The generated OpenTofu state encryption passphrase
 
-Commit `config/secrets.enc.yaml` to Git.
+4. Run pre-flight verification:
+   ```bash
+   ./scripts/preflight.sh
+   ```
+   > [!TIP]
+   > This helper script decrypts your secrets in memory and verifies live connectivity to the Hetzner Cloud API, DNS provider zone existence, S3 backend authentication, OpenTofu client-side state encryption, and validates all code and `.tftpl` templates (`tofu validate`) before triggering GitHub Actions.
+
+5. Commit `config/secrets.enc.yaml` to Git.
 
 ### 3. Configure GitHub Repository Secrets
 
-Under your repository's **Settings > Secrets and variables > Actions**, add the single required private key:
+Under your repository's **Settings > Secrets and variables > Actions**, add the required secrets:
 
 | Secret | Required | Description |
 | :--- | :---: | :--- |
-| `SOPS_AGE_KEY` | **Yes** | Private Age key (`AGE-SECRET-KEY-1...`) used to decrypt `secrets.enc.yaml` |
+| `SOPS_AGE_KEY` | **Yes** | Private Age key (`AGE-SECRET-KEY-1...`) from `~/.config/sops/age/keys.txt` used by CI to decrypt secrets and manage state |
+| `PAT_WATCHDOG` | *Optional* | Fine-grained GitHub PAT with repository `actions: write` scope for the VM idle watchdog to trigger `server-stop.yml`. *Can alternatively be supplied in `secrets.enc.yaml` as `github_pat`*. |
 | `PAT_TEMPLATE_SYNC` | *Optional* | GitHub PAT with `repo` and `workflow` scopes to allow automated template sync PRs to update `.github/workflows/` (defaults to `GITHUB_TOKEN`) |
-| `PAT_WATCHDOG` | *Optional* | Fine-grained GitHub PAT with repository `actions: write` scope for the VM watchdog stop dispatcher (defaults to `github.token`) |
+
+> [!NOTE]
+> **Why `PAT_WATCHDOG` cannot use the default GitHub Actions token**:
+> The auto-stop watchdog runs as a local systemd daemon on the Hetzner VM long after the startup workflow has finished. Ephemeral GitHub Actions tokens expire upon workflow completion and cannot be used by the VM. Providing a scoped token (in SOPS or as a GitHub secret) is required for the VM to trigger `server-stop.yml` on idle.
 
 > [!TIP]
 > **All provider tokens and remote state credentials live in SOPS!**
@@ -107,27 +145,73 @@ tofu plan
 
 ### 4. Customize Server Settings
 
-Adjust `config/settings.yaml` (copy from `config/settings.example.yaml`):
+Copy and adjust `config/settings.yaml`:
+```bash
+cp config/settings.example.yaml config/settings.yaml
+```
+
+Edit `config/settings.yaml` with your preferred server specifications and commit it to Git:
 ```yaml
 server:
-  server_type: "cpx21"         # 3 vCPU AMD, 4 GB RAM (~€0.012/hour)
-  location: "fsn1"             # Nuremberg, Germany (or falkenstein, helsinki)
+  server_type: "cpx31"         # 4 vCPU AMD, 8 GB RAM (~€0.034/hour)
+  location: "fsn1"             # Falkenstein, Germany (or nbg1, hel1)
   volume_size_gb: 10           # Persistent block volume
   always_on: false             # Set to true to disable auto-stop
   idle_timeout_minutes: 15     # Auto-stop after 15m of no players
+  ssh_allowed_ips: []          # Whitelist CIDRs for SSH or [] to drop TCP 22
 
 minecraft:
   version: "LATEST"            # Target Minecraft Paper version
-  jvm_memory: "6G"             # Java heap allocation
+  jvm_memory: "6G"             # Java heap allocation (leaves ~2GB for OS & Geyser on 8GB node)
   motd: "Mine Your Own Bum"
+  max_players: 20
+  difficulty: "normal"
 
 dns:
   enabled: true
-  provider: "desec"            # "desec" or "ionos"
-  domain: "my-minecraft.dedyn.io"
-  subname: "mc"
+  provider: "ionos"            # "desec" or "ionos"
+  domain: "example.com"        # Registered apex / zone domain
+  subname: "mc"                # Subdomain prefix (e.g. mc.example.com)
   ttl: 60
 ```
+Commit `config/settings.yaml` to your repository so GitHub Actions can read your configuration.
+
+#### ⚙️ Configuration Reference (`config/settings.yaml`)
+
+##### `server`
+| Parameter | Type | Default | Description |
+| :--- | :---: | :---: | :--- |
+| `server_type` | `string` | `"cpx31"` | Hetzner Cloud VM model (e.g. `cx22`, `cpx21`, `cpx31`). `cpx31` (4 vCPU AMD, 8 GB RAM) is recommended for smooth Paper chunk generation and crossplay. |
+| `location` | `string` | `"fsn1"` | Hetzner datacenter location (`fsn1` = Falkenstein, `nbg1` = Nuremberg, `hel1` = Helsinki). *Note: Persistent volumes are currently available in EU regions.* |
+| `volume_size_gb` | `number` | `10` | Size of the persistent Hetzner block volume retaining Minecraft world data across shutdowns (minimum 10 GB). |
+| `always_on` | `bool` | `false` | When `true`, disables the auto-stop watchdog; the VM stays running until stopped manually via workflow. |
+| `idle_timeout_minutes` | `number` | `15` | Minutes with 0 active players before saving the world and triggering automated VM teardown. |
+| `ssh_allowed_ips` | `list` | `[]` | Whitelist of IPv4/IPv6 CIDR ranges allowed to connect via SSH port 22 (e.g. `["203.0.113.50/32"]`). Leave empty `[]` to drop all port 22 traffic. |
+
+##### `minecraft`
+| Parameter | Type | Default | Description |
+| :--- | :---: | :---: | :--- |
+| `version` | `string` | `"LATEST"` | Target PaperMC version (e.g. `"LATEST"`, `"1.21.1"`). |
+| `jvm_memory` | `string` | `"6G"` | Java heap memory allocation (`-Xmx`). On an 8 GB RAM node (`cpx31`), set to `"6G"` to leave headroom for OS, Docker, and off-heap Geyser Bedrock translation. |
+| `motd` | `string` | `"..."` | Message of the day displayed in the multiplayer server list. |
+| `max_players` | `number` | `20` | Maximum simultaneous players allowed. |
+| `difficulty` | `string` | `"normal"` | In-game difficulty (`peaceful`, `easy`, `normal`, `hard`). |
+| `plugins` | `list` | `[...]` | HTTP/HTTPS direct download URLs for Spigot/Paper plugins. Pre-configured with dynamic endpoints for **GeyserMC** and **Floodgate** crossplay. |
+
+##### `dns`
+| Parameter | Type | Default | Description |
+| :--- | :---: | :---: | :--- |
+| `enabled` | `bool` | `false` | Enable automated public DNS registration on boot and cleanup on shutdown. |
+| `provider` | `string` | `"desec"` | DNS provider API (`"desec"` or `"ionos"`). |
+| `domain` | `string` | `"..."` | Your registered **apex / zone domain** in your DNS provider (e.g. `"example.com"` or `"my-server.dedyn.io"`). |
+| `subname` | `string` | `"mc"` | Subdomain prefix (e.g. `"mc"` or `"mine-your-own-bum"`). Use `""` or `"@"` for apex root domain. |
+| `ttl` | `number` | `60` | DNS record TTL in seconds (low value like `60` recommended for ephemeral IPs). |
+
+##### `backup`
+| Parameter | Type | Default | Description |
+| :--- | :---: | :---: | :--- |
+| `enabled` | `bool` | `false` | Enable automated Google Drive cloud backup container. |
+| `cron` | `string` | `"0 4 * * *"` | Cron schedule for recurring world snapshots while the server is running. |
 
 ---
 
@@ -145,6 +229,39 @@ dns:
 ### Stopping
 - **Automatic**: Stop occurs automatically when no players are connected for `idle_timeout_minutes`.
 - **Manual**: Go to **Actions > Stop Minecraft Server > Run workflow**.
+
+---
+
+## 🎮 How to Connect (Clients)
+
+No client-side mods are required to join. Both Java Edition and Bedrock Edition players can play together simultaneously on the same server.
+
+### ☕ Minecraft Java Edition (PC, Mac, Linux)
+1. Open the official **Minecraft Launcher** (or Prism Launcher, Modrinth App).
+2. Launch Minecraft matching the server version (e.g. `1.21.x`).
+3. Go to **Multiplayer > Add Server**.
+4. Enter your connection details:
+   - **Server Name**: Any name (e.g. `Mine Your Own Bum`)
+   - **Server Address**: Your configured FQDN domain (e.g. `mc.example.com`), or the temporary public IPv4 address from the workflow Job Summary. Default port `25565` does not need to be specified.
+5. Click **Done** and connect.
+
+### 📱 Minecraft Bedrock Edition (Windows 10/11, iOS, Android)
+1. Launch **Minecraft (Bedrock)**.
+2. Go to **Play > Servers tab > Add Server** (scroll down to the bottom of the server list).
+3. Fill in:
+   - **Server Name**: `Mine Your Own Bum`
+   - **Server Address**: Your configured domain (or server IPv4)
+   - **Port**: `19132` (standard Bedrock UDP port)
+4. Tap **Save** and select the server to join.
+
+### 🕹️ Consoles (Xbox, PlayStation, Nintendo Switch)
+Console editions of Minecraft Bedrock do not include an "Add External Server" button by default due to platform restrictions. You can easily connect using one of the following methods:
+
+- **Recommended (Easiest)**: Download the free **[BedrockTogether](https://bedrocktogether.net/)** app on an iOS or Android smartphone connected to the same Wi-Fi as your console:
+  1. Enter your server's domain/IP and port `19132` in the app and tap **Run**.
+  2. On your console, open Minecraft and navigate to **Friends > LAN Games**.
+  3. The server will appear automatically as a joinable local game!
+- **Alternative**: Configure DNS redirection via public tools like BedrockConnect or MC-Server-Connector.
 
 ---
 

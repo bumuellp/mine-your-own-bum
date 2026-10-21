@@ -66,7 +66,7 @@ module "firewall" {
 
 # 3. Cloud-Init Manifest & Compose Orchestration
 locals {
-  docker_compose = templatefile("${path.module}/docker-compose.yml.tftpl", {
+  docker_compose = templatefile("${path.module}/templates/docker-compose.yml.tftpl", {
     minecraft_version = local.settings.minecraft.version
     jvm_memory        = local.settings.minecraft.jvm_memory
     motd              = local.settings.minecraft.motd
@@ -78,17 +78,17 @@ locals {
     backup_cron       = local.settings.backup.cron
   })
 
-  cloud_init = templatefile("${path.module}/cloud-init.yaml.tftpl", {
+  cloud_init = templatefile("${path.module}/templates/cloud-init.yaml.tftpl", {
     always_on         = local.settings.server.always_on
     idle_timeout      = local.settings.server.idle_timeout_minutes
     github_repository = var.github_repository
     github_pat        = local.github_pat
     volume_id         = module.volume.id
     docker_compose    = local.docker_compose
-    watchdog_script   = file("${path.module}/../scripts/idle-watchdog.sh")
-    bootstrap_script  = file("${path.module}/../scripts/bootstrap-volume.sh")
-    systemd_service   = file("${path.module}/../systemd/mc-idle-watchdog.service")
-    systemd_timer     = file("${path.module}/../systemd/mc-idle-watchdog.timer")
+    watchdog_script   = file("${path.module}/files/scripts/idle-watchdog.sh")
+    bootstrap_script  = file("${path.module}/files/scripts/bootstrap-volume.sh")
+    systemd_service   = file("${path.module}/files/systemd/mc-idle-watchdog.service")
+    systemd_timer     = file("${path.module}/files/systemd/mc-idle-watchdog.timer")
   })
 }
 

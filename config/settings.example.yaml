@@ -1,6 +1,6 @@
 ---
 server:
-  server_type: "cpx21"
+  server_type: "cpx31"
   location: "fsn1"
   volume_size_gb: 10
   always_on: false

@@ -16,6 +16,8 @@ jobs:
     name: Provision & Start Server
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -115,6 +117,32 @@ jobs:
           records: ${{ steps.tofu_apply.outputs.ipv6 }}
           ttl: ${{ steps.tofu_apply.outputs.dns_ttl }}
           action: sync
+
+      - name: Verify Server Readiness & Healthcheck
+        timeout-minutes: 5
+        run: |
+          SERVER_IP="${{ steps.tofu_apply.outputs.ipv4 }}"
+          echo "Waiting for Minecraft server on $SERVER_IP:25565 to become reachable..."
+
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          ONLINE=false
+
+          while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
+            if nc -z -w 3 "$SERVER_IP" 25565 2>/dev/null; then
+              echo "::notice ::Minecraft server is ONLINE and accepting connections at $SERVER_IP:25565!"
+              ONLINE=true
+              break
+            fi
+            echo "Waiting for Minecraft engine to initialize... (attempt $((ATTEMPT + 1))/$MAX_ATTEMPTS)"
+            sleep 6
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          if [ "$ONLINE" != "true" ]; then
+            echo "::error ::Minecraft server failed to respond on port 25565 within timeout window."
+            exit 1
+          fi
 
       - name: Generate GitHub Actions Step Summary
         run: |

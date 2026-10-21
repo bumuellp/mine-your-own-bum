@@ -34,6 +34,7 @@ terraform {
   backend "s3" {
     # Instance parameters (bucket, endpoint, key) are injected at runtime via -backend-config
     key          = "mine-your-own-bum/terraform.tfstate"
+    region       = "auto"
     use_lockfile = true
 
     # Non-AWS S3-compatible storage bypasses (Hetzner Object Storage / MinIO / Ceph)
