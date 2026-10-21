@@ -13,6 +13,15 @@ minecraft:
   motd: "Mine Your Own Bum - On-Demand Crossplay Server"
   max_players: 20
   difficulty: "normal"
+  whitelist_enabled: true
+  whitelist:
+    # Java players: username (e.g. "Steve") or UUID
+    # Bedrock players: Floodgate UUID (format: 00000000-0000-0000-xxxx-xxxxxxxxxxxx derived from Xbox XUID)
+    - "Steve"
+    # - "00000000-0000-0000-0009-0123456789ab"  # Bedrock Gamertag
+  ops:
+    - "Steve"
+    # - "00000000-0000-0000-0009-0123456789ab"  # Bedrock Gamertag
   plugins:
     # Crossplay: Dynamic endpoints track the latest stable builds to prevent Bedrock client lockouts
     - "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"

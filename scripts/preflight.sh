@@ -244,6 +244,18 @@ else
 			echo -e "${BLUE}[i] Backup Storage:${NC} Automated cloud backups are disabled in settings.yaml."
 		fi
 
+		# Minecraft access control / whitelist validation
+		WL_ENABLED="$(get_setting "minecraft" "whitelist_enabled" || echo "false")"
+		if [ "$WL_ENABLED" = "true" ]; then
+			if grep -E '^[[:space:]]*-[[:space:]]*["'"'"']?\.[a-zA-Z0-9_]' "$SETTINGS_FILE" >/dev/null 2>&1; then
+				BAD_NAME="$(grep -E '^[[:space:]]*-[[:space:]]*["'"'"']?\.[a-zA-Z0-9_]' "$SETTINGS_FILE" | head -n 1 | sed -E 's/^[[:space:]]*-[[:space:]]*["'"'"']?([^"'"'"'[:space:]]+)["'"'"']?.*$/\1/')"
+				echo -e "${RED}[✗] Minecraft Whitelist:${NC} Bedrock username '${BAD_NAME}' detected. Bedrock players must use their Floodgate UUID (format: 00000000-0000-0000-xxxx-xxxxxxxxxxxx) because Mojang API cannot resolve Bedrock gamertags."
+				ALL_OK=1
+			else
+				echo -e "${GREEN}[✓] Minecraft Whitelist:${NC} Access control whitelist is enabled."
+			fi
+		fi
+
 		rm -rf iac/.terraform iac/.terraform.lock.hcl
 	else
 		rm -rf iac/.terraform iac/.terraform.lock.hcl

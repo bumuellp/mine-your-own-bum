@@ -79,6 +79,9 @@ locals {
     motd                   = local.settings.minecraft.motd
     max_players            = local.settings.minecraft.max_players
     difficulty             = local.settings.minecraft.difficulty
+    whitelist_enabled      = local.settings.minecraft.whitelist_enabled
+    whitelist              = local.settings.minecraft.whitelist
+    ops                    = local.settings.minecraft.ops
     rcon_password          = local.rcon_password
     plugins                = local.settings.minecraft.plugins
     backup_enabled         = local.settings.backup.enabled

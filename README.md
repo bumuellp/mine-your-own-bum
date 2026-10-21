@@ -168,6 +168,11 @@ minecraft:
   motd: "Mine Your Own Bum"
   max_players: 20
   difficulty: "normal"
+  whitelist_enabled: true      # Enforce player whitelist
+  whitelist:
+    - "Steve"                  # Java username or Bedrock Floodgate UUID
+  ops:
+    - "Steve"                  # Server operator (permission level 4)
 
 dns:
   enabled: true
@@ -198,6 +203,9 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 | `motd` | `string` | `"..."` | Message of the day displayed in the multiplayer server list. |
 | `max_players` | `number` | `20` | Maximum simultaneous players allowed. |
 | `difficulty` | `string` | `"normal"` | In-game difficulty (`peaceful`, `easy`, `normal`, `hard`). |
+| `whitelist_enabled` | `bool` | `true` | When `true`, enforces native player access control. Unauthorized players cannot connect. |
+| `whitelist` | `list` | `[...]` | Whitelisted players. Java players use username (e.g. `"Steve"`). Bedrock players use Floodgate UUIDs (e.g. `"00000000-0000-0000-xxxx-xxxxxxxxxxxx"` derived from Xbox XUID). |
+| `ops` | `list` | `[...]` | Server operators granted permission level 4 (`/gamemode`, `/fwhitelist`, `/kick`, etc.). Format matches `whitelist`. |
 | `plugins` | `list` | `[...]` | HTTP/HTTPS direct download URLs for Spigot/Paper plugins. Pre-configured with dynamic endpoints for **GeyserMC** and **Floodgate** crossplay. |
 
 ##### `dns`

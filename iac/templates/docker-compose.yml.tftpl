@@ -19,6 +19,22 @@ services:
       RCON_PORT: "25575"
       RCON_PASSWORD: ${replace(jsonencode(rcon_password), "$", "$$")}
       STOP_SERVER_ANNOUNCE_DELAY: "15"
+%{ if whitelist_enabled ~}
+      ENABLE_WHITELIST: "true"
+      ENFORCE_WHITELIST: "true"
+%{ if length(whitelist) > 0 ~}
+      WHITELIST: |
+%{ for w in whitelist ~}
+        ${w}
+%{ endfor ~}
+%{ endif ~}
+%{ endif ~}
+%{ if length(ops) > 0 ~}
+      OPS: |
+%{ for o in ops ~}
+        ${o}
+%{ endfor ~}
+%{ endif ~}
       PLUGINS: |
 %{ for p in plugins ~}
         ${p}
