@@ -8,12 +8,17 @@ locals {
 
 output "docker_compose" {
   value = templatefile("${path.module}/../../iac/templates/docker-compose.yml.tftpl", {
+    server_type            = local.settings.minecraft.server_type
     minecraft_version      = local.settings.minecraft.version
     jvm_memory             = "2G"
     motd                   = local.settings.minecraft.motd
     max_players            = local.settings.minecraft.max_players
     difficulty             = local.settings.minecraft.difficulty
+    whitelist_enabled      = false
+    whitelist              = []
+    ops                    = []
     rcon_password          = "smoke-test-rcon-secret"
+    modrinth_projects      = local.settings.minecraft.modrinth_projects
     plugins                = local.settings.minecraft.plugins
     backup_enabled         = local.settings.backup.enabled
     backup_interval        = local.settings.backup.interval
