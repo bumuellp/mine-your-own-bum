@@ -4,9 +4,9 @@
   "customManagers": [
     {
       "customType": "regex",
-      "fileMatch": [
-        "(^|/)config/settings\\.yaml$",
-        "(^|/)config/settings\\.example\\.yaml$"
+      "managerFilePatterns": [
+        "/(^|/)config/settings\\.yaml$/",
+        "/(^|/)config/settings\\.example\\.yaml$/"
       ],
       "matchStrings": [
         "version:\\s*[\"']?(?<currentValue>[^\"'\\s]+)[\"']?\\s*#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)"
