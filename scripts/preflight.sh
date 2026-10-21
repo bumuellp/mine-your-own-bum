@@ -208,28 +208,6 @@ else
 			ALL_OK=1
 		fi
 
-		# Cloud-Init schema check (if cloud-init CLI is installed)
-		if command -v cloud-init >/dev/null 2>&1; then
-			RENDERED_INIT="$(mktemp)"
-			if (cd iac && tofu console <<<'local.cloud_init' 2>/dev/null | sed -e 's/^"//' -e 's/"$//' -e 's/\\n/\n/g' -e 's/\\"/"/g' >"$RENDERED_INIT"); then
-				if cloud-init schema --config-file "$RENDERED_INIT" >/dev/null 2>&1; then
-					echo -e "${GREEN}[✓] Cloud-Init Schema:${NC} Rendered guest payload passed cloud-init schema check."
-				fi
-			fi
-			rm -f "$RENDERED_INIT"
-		fi
-
-		# Docker Compose config check (if docker CLI is installed)
-		if command -v docker >/dev/null 2>&1; then
-			RENDERED_COMPOSE="$(mktemp)"
-			if (cd iac && tofu console <<<'local.docker_compose' 2>/dev/null | sed -e 's/^"//' -e 's/"$//' -e 's/\\n/\n/g' -e 's/\\"/"/g' >"$RENDERED_COMPOSE"); then
-				if docker compose -f "$RENDERED_COMPOSE" config >/dev/null 2>&1; then
-					echo -e "${GREEN}[✓] Docker Compose Config:${NC} Rendered container stack validated successfully."
-				fi
-			fi
-			rm -f "$RENDERED_COMPOSE"
-		fi
-
 		# Cloud backup configuration check
 		BACKUP_ENABLED=$(get_setting "backup" "enabled" || echo "false")
 		if [ "$BACKUP_ENABLED" = "true" ]; then
