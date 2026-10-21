@@ -16,6 +16,7 @@ concurrency:
 jobs:
   stop:
     name: Teardown & Destroy Server
+    if: github.repository != 'bumuellp/mine-your-own-bum'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

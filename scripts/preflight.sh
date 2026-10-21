@@ -201,6 +201,17 @@ else
 			rm -f "$RENDERED_INIT"
 		fi
 
+		# Docker Compose config check (if docker CLI is installed)
+		if command -v docker >/dev/null 2>&1; then
+			RENDERED_COMPOSE="$(mktemp)"
+			if (cd iac && tofu console <<<'local.docker_compose' 2>/dev/null | sed -e 's/^"//' -e 's/"$//' -e 's/\\n/\n/g' -e 's/\\"/"/g' >"$RENDERED_COMPOSE"); then
+				if docker compose -f "$RENDERED_COMPOSE" config >/dev/null 2>&1; then
+					echo -e "${GREEN}[✓] Docker Compose Config:${NC} Rendered container stack validated successfully."
+				fi
+			fi
+			rm -f "$RENDERED_COMPOSE"
+		fi
+
 		rm -rf iac/.terraform iac/.terraform.lock.hcl
 	else
 		rm -rf iac/.terraform iac/.terraform.lock.hcl

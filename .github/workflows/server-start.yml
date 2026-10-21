@@ -14,6 +14,7 @@ concurrency:
 jobs:
   start:
     name: Provision & Start Server
+    if: github.repository != 'bumuellp/mine-your-own-bum'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

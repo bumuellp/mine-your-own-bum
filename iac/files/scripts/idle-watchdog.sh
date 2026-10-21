@@ -6,6 +6,12 @@
 # ==============================================================================
 set -euo pipefail
 
+log_console() {
+	echo "[mc-watchdog] $*" | tee -a /dev/kmsg /dev/console 2>/dev/null || echo "[mc-watchdog] $*"
+}
+
+trap 'log_console "[FATAL] Watchdog failed at line $LINENO (exit code: $?)"' ERR
+
 # Source configuration file if present
 if [ -f "/etc/default/minecraft-watchdog" ]; then
 	# shellcheck disable=SC1091
@@ -25,22 +31,22 @@ fi
 
 dispatch_stop_workflow() {
 	if [ -n "$GITHUB_PAT" ] && [ -n "$GITHUB_REPOSITORY" ]; then
-		echo "Dispatching GitHub Actions stop workflow on repository '${GITHUB_REPOSITORY}'..."
+		log_console "Dispatching GitHub Actions stop workflow on repository '${GITHUB_REPOSITORY}'..."
 		if curl --fail --retry 3 --retry-delay 5 --max-time 15 -sS -X POST \
 			-H "Accept: application/vnd.github+json" \
 			-H "Authorization: Bearer ${GITHUB_PAT}" \
 			-H "X-GitHub-Api-Version: 2022-11-28" \
 			"https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/server-stop.yml/dispatches" \
 			-d '{"ref":"main"}'; then
-			echo "GitHub Actions stop workflow dispatched successfully."
+			log_console "GitHub Actions stop workflow dispatched successfully."
 			rm -f "$STATE_FILE" "$PENDING_STOP_FILE"
 			return 0
 		else
-			echo "ERROR: Failed to dispatch stop workflow to GitHub API. Will retry on next interval." >&2
+			log_console "ERROR: Failed to dispatch stop workflow to GitHub API. Will retry on next interval."
 			return 1
 		fi
 	else
-		echo "WARN: GITHUB_PAT or GITHUB_REPOSITORY not configured. Skipping workflow dispatch."
+		log_console "WARN: GITHUB_PAT or GITHUB_REPOSITORY not configured. Skipping workflow dispatch."
 		rm -f "$STATE_FILE" "$PENDING_STOP_FILE"
 		return 0
 	fi
@@ -48,7 +54,7 @@ dispatch_stop_workflow() {
 
 # If a stop is already pending (e.g. previous dispatch attempt failed), retry immediately
 if [ -f "$PENDING_STOP_FILE" ]; then
-	echo "Pending stop detected from previous interval. Retrying GitHub Actions dispatch..."
+	log_console "Pending stop detected from previous interval. Retrying GitHub Actions dispatch..."
 	dispatch_stop_workflow
 	exit 0
 fi
@@ -87,7 +93,7 @@ echo "$CURRENT_TICKS" >"$STATE_FILE"
 echo "Idle Watchdog: 0 players online. Idle ticks: ${CURRENT_TICKS}/${IDLE_TIMEOUT_MINUTES}"
 
 if [ "$CURRENT_TICKS" -ge "$IDLE_TIMEOUT_MINUTES" ]; then
-	echo "Idle timeout reached (${IDLE_TIMEOUT_MINUTES}m). Initiating graceful shutdown..."
+	log_console "Idle timeout reached (${IDLE_TIMEOUT_MINUTES}m). Initiating graceful shutdown..."
 	touch "$PENDING_STOP_FILE"
 
 	# 1. Broadcast warning

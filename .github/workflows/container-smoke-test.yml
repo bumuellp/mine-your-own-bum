@@ -1,0 +1,37 @@
+---
+name: Container Smoke Test
+
+'on':
+  pull_request:
+    paths:
+      - 'iac/templates/docker-compose.yml.tftpl'
+      - 'config/settings.yaml'
+      - 'config/settings.example.yaml'
+      - 'tests/smoke-test/**'
+      - '.github/scripts/container-smoke-test.sh'
+      - '.github/workflows/container-smoke-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-test:
+    name: Verify Minecraft Container Stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2
+        with:
+          tofu_version_file: .tofu-version
+
+      - name: Run Container Smoke Test
+        run: .github/scripts/container-smoke-test.sh
