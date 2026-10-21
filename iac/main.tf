@@ -13,11 +13,12 @@ locals {
   rcon_password = coalesce(var.rcon_password, try(data.sops_file.secrets[0].data["rcon_password"], "secret-mc-rcon-pass"))
   github_pat    = try(coalesce(var.github_pat, try(data.sops_file.secrets[0].data["github_pat"], null)), "")
 
-  # S3 / R2 Backup Configuration
-  backup_s3_bucket     = coalesce(try(data.sops_file.secrets[0].data["backup_s3_bucket"], null), try(data.sops_file.secrets[0].data["s3_bucket"], null), "")
-  backup_s3_endpoint   = coalesce(try(data.sops_file.secrets[0].data["backup_s3_endpoint"], null), try(data.sops_file.secrets[0].data["s3_endpoint"], null), "")
-  backup_s3_access_key = coalesce(try(data.sops_file.secrets[0].data["backup_s3_access_key"], null), try(data.sops_file.secrets[0].data["s3_access_key"], null), "")
-  backup_s3_secret_key = coalesce(try(data.sops_file.secrets[0].data["backup_s3_secret_key"], null), try(data.sops_file.secrets[0].data["s3_secret_key"], null), "")
+  # Dedicated S3 / R2 Backup Configuration
+  backup_s3_bucket     = try(data.sops_file.secrets[0].data["backup_s3_bucket"], "")
+  backup_s3_endpoint   = try(data.sops_file.secrets[0].data["backup_s3_endpoint"], "")
+  backup_s3_access_key = try(data.sops_file.secrets[0].data["backup_s3_access_key"], "")
+  backup_s3_secret_key = try(data.sops_file.secrets[0].data["backup_s3_secret_key"], "")
+  backup_s3_provider   = can(regex("r2\\.cloudflarestorage\\.com", local.backup_s3_endpoint)) ? "Cloudflare" : (can(regex("your-objectstorage\\.com|hetzner", local.backup_s3_endpoint)) ? "Ceph" : (can(regex("amazonaws\\.com", local.backup_s3_endpoint)) ? "AWS" : "Other"))
 }
 
 provider "hcloud" {
@@ -86,6 +87,7 @@ locals {
     backup_retention_count = local.settings.backup.retention_count
     backup_s3_bucket       = local.backup_s3_bucket
     backup_s3_endpoint     = local.backup_s3_endpoint
+    backup_s3_provider     = local.backup_s3_provider
     backup_s3_access_key   = local.backup_s3_access_key
     backup_s3_secret_key   = local.backup_s3_secret_key
   })

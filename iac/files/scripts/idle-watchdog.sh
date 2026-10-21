@@ -100,20 +100,16 @@ if [ "$CURRENT_TICKS" -ge "$IDLE_TIMEOUT_MINUTES" ]; then
 	docker exec mc-server rcon-cli say "Server idle for ${IDLE_TIMEOUT_MINUTES} minutes. Stopping..." || true
 	sleep 5
 
-	# 2. Clean stop flushes chunks and world data cleanly
-	docker exec mc-server rcon-cli stop || true
-	sleep 10
-
-	# 3. If backup sidecar is active, trigger session-end snapshot
+	# 2. Trigger session-end backup via mc-backup while server and RCON are active
 	if docker ps -q --filter "name=mc-backup" | grep -q .; then
 		log_console "Triggering session-end backup via mc-backup..."
 		docker exec mc-backup backup-now || true
 	fi
 
-	# 4. Stop container stack
+	# 3. Cleanly stop containers (sends SIGTERM, flushes world chunks, prevents restart loop)
 	docker stop mc-backup || true
 	docker stop mc-server || true
 
-	# 5. Trigger GitHub Actions stop workflow
+	# 4. Trigger GitHub Actions stop workflow
 	dispatch_stop_workflow
 fi

@@ -116,6 +116,7 @@ jobs:
           action: delete
 
       - name: Graceful Server ACPI Shutdown
+        continue-on-error: true
         run: .github/scripts/graceful-shutdown.sh
         env:
           SERVER_ID: ${{ steps.dns_cfg.outputs.server_id }}

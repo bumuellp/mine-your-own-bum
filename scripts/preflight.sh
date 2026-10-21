@@ -9,18 +9,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
-SECRETS_FILE="config/secrets.enc.yaml"
 SETTINGS_FILE="config/settings.yaml"
-
-if [ ! -f "$SECRETS_FILE" ]; then
-	echo "ERROR: '${SECRETS_FILE}' not found. Please create and encrypt it first." >&2
-	exit 1
-fi
-
 [ -f "$SETTINGS_FILE" ] || SETTINGS_FILE="config/settings.example.yaml"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
+BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
@@ -28,10 +22,23 @@ echo "=========================================================="
 echo " Validating Credentials & Secrets (Local Pre-flight Check)"
 echo "=========================================================="
 
-# 1. Decrypt secrets safely into memory
-if ! DECRYPTED="$(sops -d "$SECRETS_FILE" 2>/dev/null)"; then
-	echo -e "${RED}[✗] Failed to decrypt ${SECRETS_FILE} with SOPS.${NC}"
-	echo "    Ensure your Age private key is in ~/.config/sops/age/keys.txt or SOPS_AGE_KEY is set."
+if [ -f "config/secrets.yaml" ]; then
+	DECRYPTED="$(cat "config/secrets.yaml")"
+	SECRETS_FILE="config/secrets.yaml"
+elif [ -f "config/secrets.enc.yaml" ]; then
+	SECRETS_FILE="config/secrets.enc.yaml"
+	if ! command -v sops >/dev/null 2>&1; then
+		echo -e "${RED}[✗] SOPS CLI not found in PATH.${NC}" >&2
+		echo "    Install SOPS to decrypt secrets locally, or provide decrypted config/secrets.yaml." >&2
+		exit 1
+	fi
+	if ! DECRYPTED="$(sops -d "$SECRETS_FILE" 2>/dev/null)"; then
+		echo -e "${RED}[✗] Failed to decrypt ${SECRETS_FILE} with SOPS.${NC}"
+		echo "    Ensure your Age private key is in ~/.config/sops/age/keys.txt or SOPS_AGE_KEY is set."
+		exit 1
+	fi
+else
+	echo "ERROR: Neither 'config/secrets.yaml' nor 'config/secrets.enc.yaml' found." >&2
 	exit 1
 fi
 
@@ -172,14 +179,25 @@ else
 	export TF_VAR_state_encryption_passphrase="$PASSPHRASE"
 	export TF_VAR_hcloud_token="${HCLOUD_TOKEN:-}"
 
+	STATE_KEY="$(awk -F'"' '/key[ \t]*=/ {print $2; exit}' iac/versions.tf)"
+	[ -n "$STATE_KEY" ] || STATE_KEY="mine-your-own-bum/terraform.tfstate"
+
 	if (cd iac && tofu init \
 		-backend-config="bucket=${S3_BUCKET}" \
 		-backend-config="endpoint=${S3_ENDPOINT}" \
 		-backend-config="access_key=${S3_ACCESS_KEY}" \
 		-backend-config="secret_key=${S3_SECRET_KEY}" \
-		-backend-config="key=$(basename "$REPO_ROOT")/terraform.tfstate" \
+		-backend-config="key=${STATE_KEY}" \
 		-reconfigure >/dev/null 2>&1); then
 		echo -e "${GREEN}[✓] S3 Backend & State Encryption:${NC} Connected and authenticated to '${S3_BUCKET}'."
+
+		# Test state decryption on the real state file
+		if (cd iac && tofu state pull >/dev/null 2>&1); then
+			echo -e "${GREEN}[✓] OpenTofu State Decryption:${NC} Remote state '${STATE_KEY}' verified and readable."
+		else
+			echo -e "${RED}[✗] OpenTofu State Decryption:${NC} Failed to decrypt remote state. Verify state_encryption_passphrase."
+			ALL_OK=1
+		fi
 
 		# Validate OpenTofu syntax, modules, and .tftpl templates
 		if (cd iac && tofu validate >/dev/null 2>&1); then
@@ -227,7 +245,9 @@ else
 					echo -e "${GREEN}[✓] Backup S3 Target:${NC} Dedicated S3/R2 backup bucket '${DEDICATED_BUCKET}' verified."
 				fi
 			else
-				echo -e "${GREEN}[✓] Backup S3 Target:${NC} Backups enabled using primary S3 bucket '${S3_BUCKET}' (/minecraft-backups/)."
+				echo -e "${RED}[✗] Backup Storage:${NC} backup.enabled is true, but 'backup_s3_bucket' is not configured in ${SECRETS_FILE}."
+				echo "    A dedicated backup S3/R2 bucket is required to isolate world backups from OpenTofu state."
+				ALL_OK=1
 			fi
 		else
 			echo -e "${BLUE}[i] Backup Storage:${NC} Automated cloud backups are disabled in settings.yaml."

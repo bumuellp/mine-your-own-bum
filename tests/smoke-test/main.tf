@@ -21,6 +21,7 @@ output "docker_compose" {
     backup_retention_count = local.settings.backup.retention_count
     backup_s3_bucket       = "smoke-test-bucket"
     backup_s3_endpoint     = "https://example.r2.cloudflarestorage.com"
+    backup_s3_provider     = "Cloudflare"
     backup_s3_access_key   = "dummy-access-key"
     backup_s3_secret_key   = "dummy-secret-key"
   })
