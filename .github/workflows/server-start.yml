@@ -100,8 +100,11 @@ jobs:
           TF_VAR_github_repository: ${{ github.repository }}
           TF_VAR_github_pat: ${{ secrets.PAT_WATCHDOG || '' }}
         run: |
-          # Ensure persistent storage volume exists in state before provisioning compute and attachments
-          tofu apply -target=module.volume -auto-approve
+          # Ensure persistent storage volume exists in state before provisioning compute and attachments (Day 1)
+          if ! tofu state list module.volume.hcloud_volume.this >/dev/null 2>&1; then
+            echo "Persistent volume not found in remote state; creating volume first..."
+            tofu apply -target=module.volume -auto-approve
+          fi
           tofu apply -auto-approve
 
           DNS_TOKEN=$(tofu output -raw dns_token)
