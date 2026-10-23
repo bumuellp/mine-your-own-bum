@@ -32,7 +32,7 @@ jobs:
 
       - name: Decrypt Secrets
         id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@c8072119d746f0005d0e4432b7ad4c1b1bbb2e1d
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
@@ -45,7 +45,7 @@ jobs:
             state_encryption_passphrase
 
       - name: Initialize OpenTofu Backend
-        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
+        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@c8072119d746f0005d0e4432b7ad4c1b1bbb2e1d
         with:
           working-directory: iac
           bucket: ${{ fromJSON(steps.sec.outputs.json).s3_bucket }}
