@@ -9,7 +9,7 @@ server:
 
 minecraft:
   server_type: "FABRIC"
-  version: "1.21.4"  # renovate: datasource=github-releases depName=PaperMC/Paper
+  version: "26.3"  # renovate: datasource=mojang-java
   jvm_memory: "6G"
   motd: "Mine Your Own Bum - On-Demand Crossplay Server"
   max_players: 20

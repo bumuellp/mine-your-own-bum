@@ -164,7 +164,7 @@ server:
 
 minecraft:
   server_type: "FABRIC"        # "FABRIC" (vanilla mechanics) or "PAPER"
-  version: "1.21.4"            # Minecraft release version
+  version: "26.3"              # Minecraft release version
   jvm_memory: "6G"             # Java heap allocation (leaves ~2GB for OS & Geyser on 8GB node)
   motd: "Mine Your Own Bum"
   max_players: 20
@@ -209,7 +209,7 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 | Parameter | Type | Default | Description |
 | :--- | :---: | :---: | :--- |
 | `server_type` | `string` | `"FABRIC"` | Minecraft server implementation (`"FABRIC"` for 100% vanilla redstone/farm mechanics, or `"PAPER"`). |
-| `version` | `string` | `"1.21.4"` | Target Minecraft version (e.g. `"1.21.4"`, `"LATEST"`). |
+| `version` | `string` | `"26.3"` | Target Minecraft version (e.g. `"26.3"`, `"LATEST"`). |
 | `jvm_memory` | `string` | `"6G"` | Java heap memory allocation (`-Xmx`). Aikar's GC flags are applied automatically for optimal pause times. |
 | `motd` | `string` | `"..."` | Message of the day displayed in the multiplayer server list. |
 | `max_players` | `number` | `20` | Maximum simultaneous players allowed. |

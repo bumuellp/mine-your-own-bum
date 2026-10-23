@@ -1,6 +1,15 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["github>bumuellp/.github:renovate-config"],
+  "customDatasources": {
+    "mojang-java": {
+      "defaultRegistryUrlTemplate": "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+      "format": "json",
+      "transformTemplates": [
+        "{\"releases\": versions[type = 'release'].{\"version\": id, \"releaseTimestamp\": releaseTime}}"
+      ]
+    }
+  },
   "customManagers": [
     {
       "customType": "regex",
@@ -9,8 +18,11 @@
         "/(^|/)config/settings\\.example\\.yaml$/"
       ],
       "matchStrings": [
-        "version:\\s*[\"']?(?<currentValue>[^\"'\\s]+)[\"']?\\s*#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)"
-      ]
+        "version:\\s*[\"']?(?<currentValue>[^\"'\\s]+)[\"']?\\s*#\\s*renovate:\\s*datasource=(?:custom\\.)?mojang-java"
+      ],
+      "datasourceTemplate": "custom.mojang-java",
+      "depNameTemplate": "minecraft-java",
+      "versioningTemplate": "loose"
     }
   ]
 }
