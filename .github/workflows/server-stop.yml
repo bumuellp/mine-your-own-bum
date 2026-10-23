@@ -88,7 +88,7 @@ jobs:
 
       - name: Delete DNS IPv4 Record
         if: steps.dns_cfg.outputs.enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@da9a4f175c5849ed3b16e8c28523c1b84e8cec63 # v1.8.0
         with:
           provider: ${{ steps.dns_cfg.outputs.provider }}
           token: ${{ steps.dns_cfg.outputs.dns_token }}
@@ -99,7 +99,7 @@ jobs:
 
       - name: Delete DNS IPv6 Record
         if: steps.dns_cfg.outputs.enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@da9a4f175c5849ed3b16e8c28523c1b84e8cec63 # v1.8.0
         with:
           provider: ${{ steps.dns_cfg.outputs.provider }}
           token: ${{ steps.dns_cfg.outputs.dns_token }}
