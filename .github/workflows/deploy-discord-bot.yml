@@ -88,19 +88,12 @@ jobs:
             github_pat
 
       - name: Skip Notice
-        if: |
-          fromJSON(steps.cfg.outputs.json)['discord.enabled'] != 'true' ||
-          (secrets.CLOUDFLARE_API_TOKEN == '' &&
-           (fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] == '' ||
-            fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] == null))
+        if: fromJSON(steps.cfg.outputs.json)['discord.enabled'] != 'true'
         run: >-
-          echo "::notice ::Discord bot disabled in settings or Cloudflare credentials missing. Skipping deployment."
+          echo "::notice ::Discord bot disabled in settings. Skipping deployment."
 
       - name: Deploy Worker via Cloudflare Action
-        if: |
-          fromJSON(steps.cfg.outputs.json)['discord.enabled'] == 'true' &&
-          (secrets.CLOUDFLARE_API_TOKEN != '' ||
-           fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != '')
+        if: fromJSON(steps.cfg.outputs.json)['discord.enabled'] == 'true'
         uses: bumuellp/lights-camera-bum-action/deploy-worker@c8072119d746f0005d0e4432b7ad4c1b1bbb2e1d
         with:
           api-token: ${{ secrets.CLOUDFLARE_API_TOKEN || fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] }}
@@ -149,10 +142,6 @@ jobs:
             discord_application_id
 
       - name: Register Slash Commands with Discord REST API
-        if: |
-          secrets.DISCORD_BOT_TOKEN != '' ||
-          (fromJSON(steps.sec.outputs.json)['discord_bot_token'] != '' &&
-           fromJSON(steps.sec.outputs.json)['discord_bot_token'] != null)
         working-directory: integrations/discord-bot
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN || fromJSON(steps.sec.outputs.json)['discord_bot_token'] }}
