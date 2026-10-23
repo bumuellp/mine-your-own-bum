@@ -85,7 +85,7 @@ npx wrangler secret put GITHUB_PAT
 npx wrangler secret put ALLOWED_USER_IDS  # Optional
 
 # 3. Deploy Rust Worker to Cloudflare
-npx wrangler deploy
+npx wrangler deploy --var GITHUB_OWNER="owner" --var GITHUB_REPO="repo" --var SERVER_FQDN="mc.domain.com"
 
 # 4. Register slash commands
 DISCORD_BOT_TOKEN="your_bot_token" DISCORD_APPLICATION_ID="your_app_id" ./scripts/register-commands.sh
