@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Rust Toolchain
-        uses: bumuellp/lights-camera-bum-action/setup-rust@c8072119d746f0005d0e4432b7ad4c1b1bbb2e1d
+        uses: bumuellp/lights-camera-bum-action/setup-rust@bb6e472c54d235d27b4c9451921820bac9ad2815
         with:
           components: clippy, rustfmt
           workspaces: integrations/discord-bot
@@ -53,19 +53,21 @@ jobs:
     needs: lint
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    env:
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Rust Toolchain
-        uses: bumuellp/lights-camera-bum-action/setup-rust@c8072119d746f0005d0e4432b7ad4c1b1bbb2e1d
+        uses: bumuellp/lights-camera-bum-action/setup-rust@bb6e472c54d235d27b4c9451921820bac9ad2815
         with:
           install-worker-build: true
           workspaces: integrations/discord-bot
 
       - name: Parse Settings
         id: cfg
-        uses: bumuellp/lights-camera-bum-action/parse-config@c8072119d746f0005d0e4432b7ad4c1b1bbb2e1d
+        uses: bumuellp/lights-camera-bum-action/parse-config@bb6e472c54d235d27b4c9451921820bac9ad2815
         with:
           file: config/settings.yaml
           fallback-file: config/settings.example.yaml
@@ -77,7 +79,7 @@ jobs:
 
       - name: Decrypt Secrets (SOPS)
         id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@c8072119d746f0005d0e4432b7ad4c1b1bbb2e1d
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@bb6e472c54d235d27b4c9451921820bac9ad2815
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
@@ -88,15 +90,23 @@ jobs:
             github_pat
 
       - name: Skip Notice
-        if: fromJSON(steps.cfg.outputs.json)['discord.enabled'] != 'true'
+        if: |
+          fromJSON(steps.cfg.outputs.json)['discord.enabled'] != 'true' ||
+          (env.CF_API_TOKEN == '' &&
+           (fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] == '' ||
+            fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] == null))
         run: >-
-          echo "::notice ::Discord bot disabled in settings. Skipping deployment."
+          echo "::notice ::Discord bot disabled in settings or Cloudflare credentials missing. Skipping deployment."
 
       - name: Deploy Worker via Cloudflare Action
-        if: fromJSON(steps.cfg.outputs.json)['discord.enabled'] == 'true'
-        uses: bumuellp/lights-camera-bum-action/deploy-worker@c8072119d746f0005d0e4432b7ad4c1b1bbb2e1d
+        if: |
+          fromJSON(steps.cfg.outputs.json)['discord.enabled'] == 'true' &&
+          (env.CF_API_TOKEN != '' ||
+           (fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != '' &&
+            fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != null))
+        uses: bumuellp/lights-camera-bum-action/deploy-worker@bb6e472c54d235d27b4c9451921820bac9ad2815
         with:
-          api-token: ${{ secrets.CLOUDFLARE_API_TOKEN || fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] }}
+          api-token: ${{ env.CF_API_TOKEN || fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] }}
           working-directory: integrations/discord-bot
           vars: |
             GITHUB_OWNER
@@ -127,13 +137,15 @@ jobs:
       (github.event_name == 'push' &&
        contains(toJSON(github.event.commits), 'integrations/discord-bot/scripts/register-commands.sh'))
     runs-on: ubuntu-latest
+    env:
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Decrypt Discord Bot Secrets (SOPS)
         id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@c8072119d746f0005d0e4432b7ad4c1b1bbb2e1d
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@bb6e472c54d235d27b4c9451921820bac9ad2815
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
@@ -142,8 +154,12 @@ jobs:
             discord_application_id
 
       - name: Register Slash Commands with Discord REST API
+        if: |
+          env.DISCORD_BOT_TOKEN != '' ||
+          (fromJSON(steps.sec.outputs.json)['discord_bot_token'] != '' &&
+           fromJSON(steps.sec.outputs.json)['discord_bot_token'] != null)
         working-directory: integrations/discord-bot
         env:
-          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN || fromJSON(steps.sec.outputs.json)['discord_bot_token'] }}
+          DISCORD_BOT_TOKEN: ${{ env.DISCORD_BOT_TOKEN || fromJSON(steps.sec.outputs.json)['discord_bot_token'] }}
           DISCORD_APPLICATION_ID: ${{ secrets.DISCORD_APPLICATION_ID || fromJSON(steps.sec.outputs.json)['discord_application_id'] }}
         run: ./scripts/register-commands.sh
