@@ -64,7 +64,6 @@ jobs:
           TF_VAR_github_pat: ${{ secrets.PAT_WATCHDOG || '' }}
         run: |
           ALREADY_RUNNING=false
-          tofu refresh
           if tofu state list module.server.hcloud_server.this >/dev/null 2>&1; then
             ALREADY_RUNNING=true
             echo "Minecraft server instance is already running in remote state."
