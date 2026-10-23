@@ -1,3 +1,4 @@
+## IAC
 # OpenTofu / Terraform
 .terraform/
 .terraform.lock.hcl
@@ -14,15 +15,34 @@ override.tf.json
 .terraformrc
 terraform.rc
 
+## General ignores
+
 # Local runtime configs & secrets (Never commit plaintext secrets)
 config/secrets.yaml
 *.age
 *.key
 key.txt
 keys.txt
+.env
+.env.*
 
 # OS & IDE
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+## Discord Bot
+
+### Rust
+
+# Exclude the 'target' folder, in which all build artifacts land
+**/target/
+
+# Cargo generated temporary files and backups
+Cargo.lock.to_bak

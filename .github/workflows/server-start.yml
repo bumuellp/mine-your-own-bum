@@ -29,69 +29,32 @@ jobs:
           tofu_version_file: .tofu-version
 
       - name: Decrypt Secrets
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
+        id: sec
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
           output: config/secrets.yaml
+          keys: |
+            s3_bucket
+            s3_endpoint
+            s3_access_key
+            s3_secret_key
+            state_encryption_passphrase
 
       - name: Validate Pre-flight Credentials & Configuration
         run: ./scripts/preflight.sh
 
-      - name: Parse S3 Backend Configuration
-        id: s3_cfg
-        run: |
-          SECRETS_FILE="config/secrets.yaml"
-          [ -f "$SECRETS_FILE" ] || SECRETS_FILE="config/secrets.example.yaml"
-
-          get_sec() {
-            awk -v k="$1" '
-              $1 == k ":" {
-                sub(/^[^:]*:[ \t]*/, "")
-                sub(/#.*$/, "")
-                gsub(/^[ \t]+|[ \t]+$/, "")
-                gsub(/^["\x27]|["\x27]$/, "")
-                print
-                exit
-              }
-            ' "$SECRETS_FILE"
-          }
-
-          S3_BUCKET="$(get_sec s3_bucket)"
-          S3_ENDPOINT="$(get_sec s3_endpoint)"
-          S3_ACCESS_KEY="$(get_sec s3_access_key)"
-          S3_SECRET_KEY="$(get_sec s3_secret_key)"
-          STATE_PASSPHRASE="$(get_sec state_encryption_passphrase)"
-
-          if [ -n "$STATE_PASSPHRASE" ]; then
-            echo "::add-mask::$STATE_PASSPHRASE"
-            echo "TF_VAR_state_encryption_passphrase=$STATE_PASSPHRASE" >> "$GITHUB_ENV"
-          fi
-
-          if [ -n "$S3_ACCESS_KEY" ]; then
-            echo "::add-mask::$S3_ACCESS_KEY"
-            echo "AWS_ACCESS_KEY_ID=$S3_ACCESS_KEY" >> "$GITHUB_ENV"
-          fi
-
-          if [ -n "$S3_SECRET_KEY" ]; then
-            echo "::add-mask::$S3_SECRET_KEY"
-            echo "AWS_SECRET_ACCESS_KEY=$S3_SECRET_KEY" >> "$GITHUB_ENV"
-          fi
-
-          echo "bucket=$S3_BUCKET" >> "$GITHUB_OUTPUT"
-          echo "endpoint=$S3_ENDPOINT" >> "$GITHUB_OUTPUT"
-          echo "access_key=$S3_ACCESS_KEY" >> "$GITHUB_OUTPUT"
-          echo "secret_key=$S3_SECRET_KEY" >> "$GITHUB_OUTPUT"
-
       - name: Initialize OpenTofu Backend
-        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
+        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
         with:
           working-directory: iac
-          bucket: ${{ steps.s3_cfg.outputs.bucket }}
-          endpoint: ${{ steps.s3_cfg.outputs.endpoint }}
+          bucket: ${{ fromJSON(steps.sec.outputs.json).s3_bucket }}
+          endpoint: ${{ fromJSON(steps.sec.outputs.json).s3_endpoint }}
           key: mine-your-own-bum/terraform.tfstate
-          access-key: ${{ steps.s3_cfg.outputs.access_key }}
-          secret-key: ${{ steps.s3_cfg.outputs.secret_key }}
+          access-key: ${{ fromJSON(steps.sec.outputs.json).s3_access_key }}
+          secret-key: ${{ fromJSON(steps.sec.outputs.json).s3_secret_key }}
+          state-passphrase: ${{ fromJSON(steps.sec.outputs.json).state_encryption_passphrase || '' }}
 
       - name: OpenTofu Apply (Provision Server)
         id: tofu_apply
@@ -100,12 +63,18 @@ jobs:
           TF_VAR_github_repository: ${{ github.repository }}
           TF_VAR_github_pat: ${{ secrets.PAT_WATCHDOG || '' }}
         run: |
-          # Ensure persistent storage volume exists in state before provisioning compute and attachments (Day 1)
-          if ! tofu state list module.volume.hcloud_volume.this >/dev/null 2>&1; then
-            echo "Persistent volume not found in remote state; creating volume first..."
-            tofu apply -target=module.volume -auto-approve
+          ALREADY_RUNNING=false
+          if tofu state list module.server.hcloud_server.this >/dev/null 2>&1; then
+            ALREADY_RUNNING=true
+            echo "Minecraft server instance is already running in remote state."
+          else
+            # Ensure persistent storage volume exists in state before provisioning compute and attachments (Day 1)
+            if ! tofu state list module.volume.hcloud_volume.this >/dev/null 2>&1; then
+              echo "Persistent volume not found in remote state; creating volume first..."
+              tofu apply -target=module.volume -auto-approve
+            fi
+            tofu apply -auto-approve
           fi
-          tofu apply -auto-approve
 
           DNS_TOKEN=$(tofu output -raw dns_token)
           if [ -n "$DNS_TOKEN" ]; then
@@ -113,6 +82,7 @@ jobs:
           fi
 
           cat << EOF >> "$GITHUB_OUTPUT"
+          already_running=$ALREADY_RUNNING
           ipv4=$(tofu output -raw server_ipv4)
           ipv6=$(tofu output -raw server_ipv6)
           dns_enabled=$(tofu output -raw dns_enabled)
@@ -182,6 +152,12 @@ jobs:
           IPV6="${{ steps.tofu_apply.outputs.ipv6 }}"
           DNS_ENABLED="${{ steps.tofu_apply.outputs.dns_enabled }}"
           FQDN="${{ steps.tofu_apply.outputs.dns_fqdn }}"
+          ALREADY_RUNNING="${{ steps.tofu_apply.outputs.already_running }}"
+
+          BOOT_STATUS="The ephemeral cloud server has been provisioned and persistent storage attached."
+          if [ "$ALREADY_RUNNING" = "true" ]; then
+            BOOT_STATUS="The server instance was already running in remote state; configuration is unchanged."
+          fi
 
           if [ "$DNS_ENABLED" = "true" ] && [ -n "$FQDN" ]; then
             JAVA_HOST="$FQDN"
@@ -201,7 +177,7 @@ jobs:
           cat << EOF >> "$GITHUB_STEP_SUMMARY"
           ## 🎮 Minecraft Server Status: **ONLINE**
 
-          The ephemeral cloud server has been provisioned and persistent storage attached.
+          $BOOT_STATUS
 
           ### 🌐 Connection Information
           | Parameter | Value |

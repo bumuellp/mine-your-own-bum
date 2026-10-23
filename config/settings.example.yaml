@@ -45,3 +45,10 @@ backup:
   retention_count: 10  # Number of snapshots to retain (prunes older ones locally & in S3/R2)
   interval: "1h"       # Recurring snapshot interval while server is online
   initial_delay: "5m"  # Delay after boot before taking first snapshot
+
+discord:
+  enabled: false
+  # Optional: Restrict /mc-start, /mc-stop to specific Discord user IDs.
+  # Leave empty ([]) to allow all members with slash command access in your guild.
+  allowed_user_ids: []
+  # - "123456789012345678"

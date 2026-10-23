@@ -31,66 +31,29 @@ jobs:
           tofu_version_file: .tofu-version
 
       - name: Decrypt Secrets
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
+        id: sec
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
           output: config/secrets.yaml
-
-      - name: Parse S3 Backend Configuration
-        id: s3_cfg
-        run: |
-          SECRETS_FILE="config/secrets.yaml"
-          [ -f "$SECRETS_FILE" ] || SECRETS_FILE="config/secrets.example.yaml"
-
-          get_sec() {
-            awk -v k="$1" '
-              $1 == k ":" {
-                sub(/^[^:]*:[ \t]*/, "")
-                sub(/#.*$/, "")
-                gsub(/^[ \t]+|[ \t]+$/, "")
-                gsub(/^["\x27]|["\x27]$/, "")
-                print
-                exit
-              }
-            ' "$SECRETS_FILE"
-          }
-
-          S3_BUCKET="$(get_sec s3_bucket)"
-          S3_ENDPOINT="$(get_sec s3_endpoint)"
-          S3_ACCESS_KEY="$(get_sec s3_access_key)"
-          S3_SECRET_KEY="$(get_sec s3_secret_key)"
-          STATE_PASSPHRASE="$(get_sec state_encryption_passphrase)"
-
-          if [ -n "$STATE_PASSPHRASE" ]; then
-            echo "::add-mask::$STATE_PASSPHRASE"
-            echo "TF_VAR_state_encryption_passphrase=$STATE_PASSPHRASE" >> "$GITHUB_ENV"
-          fi
-
-          if [ -n "$S3_ACCESS_KEY" ]; then
-            echo "::add-mask::$S3_ACCESS_KEY"
-            echo "AWS_ACCESS_KEY_ID=$S3_ACCESS_KEY" >> "$GITHUB_ENV"
-          fi
-
-          if [ -n "$S3_SECRET_KEY" ]; then
-            echo "::add-mask::$S3_SECRET_KEY"
-            echo "AWS_SECRET_ACCESS_KEY=$S3_SECRET_KEY" >> "$GITHUB_ENV"
-          fi
-
-          echo "bucket=$S3_BUCKET" >> "$GITHUB_OUTPUT"
-          echo "endpoint=$S3_ENDPOINT" >> "$GITHUB_OUTPUT"
-          echo "access_key=$S3_ACCESS_KEY" >> "$GITHUB_OUTPUT"
-          echo "secret_key=$S3_SECRET_KEY" >> "$GITHUB_OUTPUT"
+          keys: |
+            s3_bucket
+            s3_endpoint
+            s3_access_key
+            s3_secret_key
+            state_encryption_passphrase
 
       - name: Initialize OpenTofu Backend
-        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
+        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
         with:
           working-directory: iac
-          bucket: ${{ steps.s3_cfg.outputs.bucket }}
-          endpoint: ${{ steps.s3_cfg.outputs.endpoint }}
+          bucket: ${{ fromJSON(steps.sec.outputs.json).s3_bucket }}
+          endpoint: ${{ fromJSON(steps.sec.outputs.json).s3_endpoint }}
           key: mine-your-own-bum/terraform.tfstate
-          access-key: ${{ steps.s3_cfg.outputs.access_key }}
-          secret-key: ${{ steps.s3_cfg.outputs.secret_key }}
+          access-key: ${{ fromJSON(steps.sec.outputs.json).s3_access_key }}
+          secret-key: ${{ fromJSON(steps.sec.outputs.json).s3_secret_key }}
+          state-passphrase: ${{ fromJSON(steps.sec.outputs.json).state_encryption_passphrase || '' }}
 
       - name: Refresh State & Parse DNS Configuration
         id: dns_cfg
@@ -100,6 +63,12 @@ jobs:
         run: |
           tofu refresh
 
+          ALREADY_STOPPED=false
+          if ! tofu state list module.server.hcloud_server.this >/dev/null 2>&1; then
+            ALREADY_STOPPED=true
+            echo "Minecraft server instance is already absent from remote state."
+          fi
+
           SERVER_ID=$(tofu output -raw server_id 2>/dev/null || true)
           DNS_TOKEN=$(tofu output -raw dns_token)
           if [ -n "$DNS_TOKEN" ]; then
@@ -107,6 +76,7 @@ jobs:
           fi
 
           cat << EOF >> "$GITHUB_OUTPUT"
+          already_stopped=$ALREADY_STOPPED
           server_id=$SERVER_ID
           enabled=$(tofu output -raw dns_enabled)
           provider=$(tofu output -raw dns_provider)
@@ -139,12 +109,14 @@ jobs:
           action: delete
 
       - name: Graceful Server ACPI Shutdown
+        if: steps.dns_cfg.outputs.already_stopped != 'true'
         continue-on-error: true
         run: .github/scripts/graceful-shutdown.sh
         env:
           SERVER_ID: ${{ steps.dns_cfg.outputs.server_id }}
 
       - name: OpenTofu Destroy Server (Targeted)
+        if: steps.dns_cfg.outputs.already_stopped != 'true'
         working-directory: iac
         env:
           TF_VAR_github_repository: ${{ github.repository }}
@@ -156,9 +128,12 @@ jobs:
         run: |
           TRIGGER_EVENT="${{ github.event_name }}"
           FQDN="${{ steps.dns_cfg.outputs.fqdn }}"
+          ALREADY_STOPPED="${{ steps.dns_cfg.outputs.already_stopped }}"
 
           STOP_REASON="The server was manually shut down via workflow dispatch."
-          if [ "$TRIGGER_EVENT" = "repository_dispatch" ]; then
+          if [ "$ALREADY_STOPPED" = "true" ]; then
+            STOP_REASON="The server was already offline; no compute teardown was needed."
+          elif [ "$TRIGGER_EVENT" = "repository_dispatch" ]; then
             STOP_REASON="The server was automatically shut down by the **Idle Watchdog** because no players were active."
           fi
 

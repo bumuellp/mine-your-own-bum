@@ -1,0 +1,160 @@
+---
+name: Deploy Discord Bot
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - "integrations/discord-bot/**"
+      - ".github/workflows/deploy-discord-bot.yml"
+      - "config/settings.yaml"
+      - "config/secrets.enc.yaml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "integrations/discord-bot/**"
+      - ".github/workflows/deploy-discord-bot.yml"
+  workflow_dispatch:
+    inputs:
+      sync_commands:
+        description: "Force synchronize slash commands with Discord"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-discord-bot
+  cancel-in-progress: false
+
+jobs:
+  lint:
+    name: Rust Lint & Verify (Check-Only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Rust Toolchain
+        uses: bumuellp/lights-camera-bum-action/setup-rust@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
+        with:
+          components: clippy, rustfmt
+          workspaces: integrations/discord-bot
+
+      - name: Check Rust Formatting (cargo fmt --check)
+        run: cargo fmt --manifest-path integrations/discord-bot/Cargo.toml --check
+
+      - name: Lint Rust Crate (cargo clippy)
+        run: cargo clippy --manifest-path integrations/discord-bot/Cargo.toml --all-targets -- -D warnings
+
+  deploy-worker:
+    name: Deploy Cloudflare Worker
+    needs: lint
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Rust Toolchain
+        uses: bumuellp/lights-camera-bum-action/setup-rust@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
+        with:
+          install-worker-build: true
+          workspaces: integrations/discord-bot
+
+      - name: Parse Settings
+        id: cfg
+        uses: bumuellp/lights-camera-bum-action/parse-config@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
+        with:
+          file: config/settings.yaml
+          fallback-file: config/settings.example.yaml
+          keys: |
+            discord.enabled
+            discord.allowed_user_ids
+            dns.subname
+            dns.domain
+
+      - name: Decrypt Secrets (SOPS)
+        id: sec
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
+        with:
+          age-key: ${{ secrets.SOPS_AGE_KEY }}
+          file: config/secrets.enc.yaml
+          keys: |
+            cloudflare_api_token
+            discord_public_key
+            discord_application_id
+            github_pat
+
+      - name: Skip Notice
+        if: |
+          fromJSON(steps.cfg.outputs.json)['discord.enabled'] != 'true' ||
+          (secrets.CLOUDFLARE_API_TOKEN == '' &&
+           (fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] == '' ||
+            fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] == null))
+        run: >-
+          echo "::notice ::Discord bot disabled in settings or Cloudflare credentials missing. Skipping deployment."
+
+      - name: Deploy Worker via Cloudflare Action
+        if: |
+          fromJSON(steps.cfg.outputs.json)['discord.enabled'] == 'true' &&
+          (secrets.CLOUDFLARE_API_TOKEN != '' ||
+           fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != '')
+        uses: bumuellp/lights-camera-bum-action/deploy-worker@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
+        with:
+          api-token: ${{ secrets.CLOUDFLARE_API_TOKEN || fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] }}
+          working-directory: integrations/discord-bot
+          vars: |
+            GITHUB_OWNER
+            GITHUB_REPO
+            SERVER_FQDN
+          secrets: |
+            DISCORD_PUBLIC_KEY
+            DISCORD_APPLICATION_ID
+            GITHUB_PAT
+            ALLOWED_USER_IDS
+        env:
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
+          SERVER_FQDN: >-
+            ${{ fromJSON(steps.cfg.outputs.json)['dns.subname'] != '' &&
+                format('{0}.{1}', fromJSON(steps.cfg.outputs.json)['dns.subname'], fromJSON(steps.cfg.outputs.json)['dns.domain']) ||
+                fromJSON(steps.cfg.outputs.json)['dns.domain'] }}
+          DISCORD_PUBLIC_KEY: ${{ secrets.DISCORD_PUBLIC_KEY || fromJSON(steps.sec.outputs.json)['discord_public_key'] }}
+          DISCORD_APPLICATION_ID: ${{ secrets.DISCORD_APPLICATION_ID || fromJSON(steps.sec.outputs.json)['discord_application_id'] }}
+          GITHUB_PAT: ${{ secrets.PAT_WATCHDOG || fromJSON(steps.sec.outputs.json)['github_pat'] }}
+          ALLOWED_USER_IDS: ${{ fromJSON(steps.cfg.outputs.json)['discord.allowed_user_ids'] || '' }}
+
+  sync-slash-commands:
+    name: Sync Discord Slash Commands
+    needs: deploy-worker
+    if: |
+      (github.event_name == 'workflow_dispatch' && inputs.sync_commands == true) ||
+      (github.event_name == 'push' &&
+       contains(toJSON(github.event.commits), 'integrations/discord-bot/scripts/register-commands.sh'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Decrypt Discord Bot Secrets (SOPS)
+        id: sec
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@202539c78b0d9e8e639af9766cd5a9dfcf04cb01
+        with:
+          age-key: ${{ secrets.SOPS_AGE_KEY }}
+          file: config/secrets.enc.yaml
+          keys: |
+            discord_bot_token
+            discord_application_id
+
+      - name: Register Slash Commands with Discord REST API
+        if: |
+          secrets.DISCORD_BOT_TOKEN != '' ||
+          (fromJSON(steps.sec.outputs.json)['discord_bot_token'] != '' &&
+           fromJSON(steps.sec.outputs.json)['discord_bot_token'] != null)
+        working-directory: integrations/discord-bot
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN || fromJSON(steps.sec.outputs.json)['discord_bot_token'] }}
+          DISCORD_APPLICATION_ID: ${{ secrets.DISCORD_APPLICATION_ID || fromJSON(steps.sec.outputs.json)['discord_application_id'] }}
+        run: ./scripts/register-commands.sh
