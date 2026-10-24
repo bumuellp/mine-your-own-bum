@@ -69,8 +69,9 @@ jobs:
             echo "Minecraft server instance is already absent from remote state."
           fi
 
-          SERVER_ID=$(tofu output -raw server_id 2>/dev/null || true)
-          DNS_TOKEN=$(tofu output -raw dns_token)
+          TOFU_OUT=$(tofu output -json)
+          SERVER_ID=$(echo "$TOFU_OUT" | jq -r '.server_id.value // ""')
+          DNS_TOKEN=$(echo "$TOFU_OUT" | jq -r '.dns_token.value // ""')
           if [ -n "$DNS_TOKEN" ]; then
             echo "::add-mask::$DNS_TOKEN"
           fi
@@ -78,17 +79,17 @@ jobs:
           cat << EOF >> "$GITHUB_OUTPUT"
           already_stopped=$ALREADY_STOPPED
           server_id=$SERVER_ID
-          enabled=$(tofu output -raw dns_enabled)
-          provider=$(tofu output -raw dns_provider)
-          domain=$(tofu output -raw dns_domain)
-          subname=$(tofu output -raw dns_subname)
-          fqdn=$(tofu output -raw dns_fqdn)
+          enabled=$(echo "$TOFU_OUT" | jq -r '.dns_enabled.value // false')
+          provider=$(echo "$TOFU_OUT" | jq -r '.dns_provider.value // ""')
+          domain=$(echo "$TOFU_OUT" | jq -r '.dns_domain.value // ""')
+          subname=$(echo "$TOFU_OUT" | jq -r '.dns_subname.value // ""')
+          fqdn=$(echo "$TOFU_OUT" | jq -r '.dns_fqdn.value // ""')
           dns_token=$DNS_TOKEN
           EOF
 
       - name: Delete DNS IPv4 Record
         if: steps.dns_cfg.outputs.enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@da9a4f175c5849ed3b16e8c28523c1b84e8cec63 # v1.8.0
         with:
           provider: ${{ steps.dns_cfg.outputs.provider }}
           token: ${{ steps.dns_cfg.outputs.dns_token }}
@@ -99,7 +100,7 @@ jobs:
 
       - name: Delete DNS IPv6 Record
         if: steps.dns_cfg.outputs.enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@a9266088302dbbda63132cc9705b14e436c957fd # v1.7.0
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@da9a4f175c5849ed3b16e8c28523c1b84e8cec63 # v1.8.0
         with:
           provider: ${{ steps.dns_cfg.outputs.provider }}
           token: ${{ steps.dns_cfg.outputs.dns_token }}
