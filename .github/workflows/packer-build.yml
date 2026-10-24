@@ -73,24 +73,4 @@ jobs:
       - name: Rotate Old Snapshots
         env:
           HCLOUD_TOKEN: ${{ fromJSON(steps.sec.outputs.json).hcloud_token }}
-        run: |
-          echo "Checking for previous golden image snapshots to rotate..."
-          SNAPSHOTS_JSON=$(curl -fsSL \
-            -H "Authorization: Bearer $HCLOUD_TOKEN" \
-            "https://api.hetzner.cloud/v1/images?type=snapshot&label_selector=role%3Dminecraft-golden-image&sort=created:desc")
-
-          # Keep the newest snapshot (index 0) and delete all older snapshots (index 1+)
-          OLD_SNAPSHOT_IDS=$(echo "$SNAPSHOTS_JSON" | jq -r '.images[1:][].id // empty')
-
-          if [ -z "$OLD_SNAPSHOT_IDS" ]; then
-            echo "No older snapshots to delete. Exactly 1 golden image snapshot retained."
-          else
-            for SNAPSHOT_ID in $OLD_SNAPSHOT_IDS; do
-              echo "Deleting old snapshot ID: $SNAPSHOT_ID"
-              curl -fsSL -X DELETE \
-                -H "Authorization: Bearer $HCLOUD_TOKEN" \
-                "https://api.hetzner.cloud/v1/images/$SNAPSHOT_ID"
-              echo "Deleted snapshot $SNAPSHOT_ID"
-            done
-            echo "Snapshot rotation completed successfully."
-          fi
+        run: ./scripts/rotate-snapshots.sh
