@@ -207,6 +207,7 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 | `always_on` | `bool` | `false` | When `true`, disables the auto-stop watchdog; the VM stays running until stopped manually via workflow. |
 | `idle_timeout_minutes` | `number` | `15` | Minutes with 0 active players before saving the world and triggering automated VM teardown. |
 | `keyboard_layout` | `string` | `"de"` | Virtual console keyboard layout (`"de"`, `"us"`, `"uk"`, etc.) loaded automatically on boot. |
+| `use_golden_image` | `bool` | `false` | When `true`, provisions the server using a pre-baked Hetzner snapshot image created by Packer (containing pre-cached Docker images and keyboard layout), reducing cold startup time by ~45 seconds. When `false`, uses the base `docker-ce` image. |
 | `ssh_keys` | `list` | `[...]` | List of SSH key names/IDs in your Hetzner Cloud project. Attaching at least one key suppresses root password emails from Hetzner. |
 | `ssh_allowed_ips` | `list` | `[]` | Whitelist of IPv4/IPv6 CIDR ranges allowed to connect via SSH port 22 (e.g. `["203.0.113.50/32"]`). Leave empty `[]` to drop all port 22 traffic. |
 
@@ -241,6 +242,12 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 | `retention_count` | `number` | `10` | Number of recent backups to keep. Automatically prunes older backups both locally and in remote R2 storage. |
 | `interval` | `string` | `"1h"` | Interval between recurring snapshots while the server is actively running. |
 | `initial_delay` | `string` | `"5m"` | Delay after boot before taking the first baseline snapshot. |
+
+##### `containers`
+| Parameter | Type | Default | Description |
+| :--- | :---: | :---: | :--- |
+| `minecraft_server` | `string` | `"itzg/minecraft-server:2026.10.0"` | Docker image tag for the Minecraft server container. Tracked and updated automatically by Renovate. |
+| `backup` | `string` | `"itzg/mc-backup:2026.10.1"` | Docker image tag for the Rclone backup sidecar container. Tracked and updated automatically by Renovate. |
 
 #### 🛡️ Player Access Control & Whitelisting (Crossplay)
 
@@ -338,6 +345,7 @@ Console editions of Minecraft Bedrock do not include an "Add External Server" bu
 
 - **Fail-Fast Pre-Flight Verification**: Run `./scripts/preflight.sh` locally or let GitHub Actions run it as a gatekeeper on server startup to validate Hetzner tokens, OpenTofu state encryption, DNS records, and template syntax in under 10 seconds.
 - **Container Smoke Testing**: Pull requests updating `iac/templates/docker-compose.yml.tftpl` or server configs (such as Renovate bumping `itzg/minecraft-server`) trigger an automated container test (`.github/workflows/container-smoke-test.yml`). It renders the stack, spins up a test container, and verifies RCON communication before merging.
+- **Packer Golden Machine Images**: Build a pre-cached Hetzner Cloud snapshot image (`.github/workflows/packer-build.yml`) running a temporary ARM `cax11` builder instance to pull container images and configure keymaps ahead of time. Older snapshots with label `role=minecraft-golden-image` are automatically rotated so only a single snapshot is kept in your Hetzner Cloud project.
 
 ---
 

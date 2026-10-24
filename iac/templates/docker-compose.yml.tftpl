@@ -1,6 +1,6 @@
 services:
   mc-server:
-    image: itzg/minecraft-server:2026.10.0
+    image: ${minecraft_image}
     container_name: mc-server
     restart: unless-stopped
     stop_grace_period: 2m
@@ -57,7 +57,7 @@ services:
       start_period: 2m
 %{ if backup_enabled ~}
   mc-backup:
-    image: itzg/mc-backup:2026.10.1
+    image: ${backup_image}
     container_name: mc-backup
     restart: unless-stopped
     stop_grace_period: 30s

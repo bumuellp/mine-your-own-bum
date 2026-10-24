@@ -1,0 +1,96 @@
+---
+name: Build Golden Machine Image
+
+'on':
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packer/**'
+      - 'config/settings.yaml'
+      - 'config/settings.example.yaml'
+      - '.github/workflows/packer-build.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packer-golden-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & Rotate Golden Image
+    if: github.repository != 'bumuellp/mine-your-own-bum'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Parse Settings
+        id: cfg
+        uses: bumuellp/lights-camera-bum-action/parse-config@bb6e472c54d235d27b4c9451921820bac9ad2815
+        with:
+          file: config/settings.yaml
+          fallback-file: config/settings.example.yaml
+          keys: |
+            server.location
+            server.type
+            server.keyboard_layout
+            containers.minecraft_server
+            containers.backup
+
+      - name: Decrypt Secrets
+        id: sec
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@bb6e472c54d235d27b4c9451921820bac9ad2815
+        with:
+          age-key: ${{ secrets.SOPS_AGE_KEY }}
+          file: config/secrets.enc.yaml
+          keys: |
+            hcloud_token
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3.4.0
+        with:
+          version: '1.11.2'
+
+      - name: Initialize Packer Plugins
+        run: packer init packer/minecraft.pkr.hcl
+
+      - name: Build Golden Image
+        env:
+          PKR_VAR_hcloud_token: ${{ fromJSON(steps.sec.outputs.json).hcloud_token }}
+          PKR_VAR_location: ${{ fromJSON(steps.cfg.outputs.json)['server.location'] || 'fsn1' }}
+          PKR_VAR_server_type: ${{ fromJSON(steps.cfg.outputs.json)['server.type'] || 'cax11' }}
+          PKR_VAR_keyboard_layout: ${{ fromJSON(steps.cfg.outputs.json)['server.keyboard_layout'] || 'de' }}
+          PKR_VAR_minecraft_image: ${{ fromJSON(steps.cfg.outputs.json)['containers.minecraft_server'] }}
+          PKR_VAR_backup_image: ${{ fromJSON(steps.cfg.outputs.json)['containers.backup'] }}
+        run: |
+          packer build -color=false packer/minecraft.pkr.hcl
+
+      - name: Rotate Old Snapshots
+        env:
+          HCLOUD_TOKEN: ${{ fromJSON(steps.sec.outputs.json).hcloud_token }}
+        run: |
+          echo "Checking for previous golden image snapshots to rotate..."
+          SNAPSHOTS_JSON=$(curl -fsSL \
+            -H "Authorization: Bearer $HCLOUD_TOKEN" \
+            "https://api.hetzner.cloud/v1/images?type=snapshot&label_selector=role%3Dminecraft-golden-image&sort=created:desc")
+
+          # Keep the newest snapshot (index 0) and delete all older snapshots (index 1+)
+          OLD_SNAPSHOT_IDS=$(echo "$SNAPSHOTS_JSON" | jq -r '.images[1:][].id // empty')
+
+          if [ -z "$OLD_SNAPSHOT_IDS" ]; then
+            echo "No older snapshots to delete. Exactly 1 golden image snapshot retained."
+          else
+            for SNAPSHOT_ID in $OLD_SNAPSHOT_IDS; do
+              echo "Deleting old snapshot ID: $SNAPSHOT_ID"
+              curl -fsSL -X DELETE \
+                -H "Authorization: Bearer $HCLOUD_TOKEN" \
+                "https://api.hetzner.cloud/v1/images/$SNAPSHOT_ID"
+              echo "Deleted snapshot $SNAPSHOT_ID"
+            done
+            echo "Snapshot rotation completed successfully."
+          fi

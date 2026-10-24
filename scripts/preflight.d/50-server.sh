@@ -43,3 +43,13 @@ if [ "$ALWAYS_ON" != "true" ]; then
 else
 	echo -e "${BLUE}[i] Server Idle Watchdog:${NC} Server is configured as always-on (idle shutdown disabled)."
 fi
+
+# 4. Centralized Container Images
+MC_IMAGE="$(get_setting "containers" "minecraft_server" || echo "")"
+BK_IMAGE="$(get_setting "containers" "backup" || echo "")"
+if [ -z "$MC_IMAGE" ] || [ -z "$BK_IMAGE" ]; then
+	echo -e "${RED}[✗] Container Images:${NC} 'containers.minecraft_server' or 'containers.backup' missing in ${SETTINGS_FILE}."
+	ALL_OK=1
+else
+	echo -e "${GREEN}[✓] Container Images:${NC} Server '${MC_IMAGE}' and backup '${BK_IMAGE}' configured."
+fi

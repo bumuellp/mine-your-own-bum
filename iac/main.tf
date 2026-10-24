@@ -23,7 +23,18 @@ locals {
   # Explicit server settings & console credentials
   ssh_keys         = local.settings.server.ssh_keys
   keyboard_layout  = local.settings.server.keyboard_layout
+  use_golden_image = local.settings.server.use_golden_image
   console_password = data.sops_file.secrets[0].data["console_password"]
+
+  # Centralized container images
+  minecraft_image = local.settings.containers.minecraft_server
+  backup_image    = local.settings.containers.backup
+}
+
+data "hcloud_image" "golden" {
+  count         = local.use_golden_image ? 1 : 0
+  with_selector = "role=minecraft-golden-image"
+  most_recent   = true
 }
 
 provider "hcloud" {
@@ -89,6 +100,8 @@ locals {
     whitelist              = local.settings.minecraft.whitelist
     ops                    = local.settings.minecraft.ops
     rcon_password          = local.rcon_password
+    minecraft_image        = local.minecraft_image
+    backup_image           = local.backup_image
     modrinth_projects      = local.settings.minecraft.modrinth_projects
     plugins                = local.settings.minecraft.plugins
     backup_enabled         = local.settings.backup.enabled
@@ -123,7 +136,7 @@ module "server" {
   source       = "git::https://github.com/bumuellp/tofu-bum.git//modules/hcloud-ephemeral-server?ref=v1.0.1"
   name         = var.server_name
   server_type  = local.settings.server.server_type
-  image        = "docker-ce"
+  image        = local.use_golden_image ? data.hcloud_image.golden[0].id : "docker-ce"
   location     = local.settings.server.location
   firewall_ids = [module.firewall.id]
   volume_id    = module.volume.id

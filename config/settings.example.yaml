@@ -6,6 +6,7 @@ server:
   always_on: false
   idle_timeout_minutes: 15
   keyboard_layout: "de"
+  use_golden_image: false  # When true, boots from pre-baked Packer snapshot
   ssh_keys:
     - "your-hetzner-ssh-key-name"
   ssh_allowed_ips: []  # Add CIDRs e.g. ["203.0.113.50/32"] or leave empty to drop TCP 22
@@ -48,6 +49,10 @@ backup:
   retention_count: 10  # Number of snapshots to retain (prunes older ones locally & in S3/R2)
   interval: "1h"       # Recurring snapshot interval while server is online
   initial_delay: "5m"  # Delay after boot before taking first snapshot
+
+containers:
+  minecraft_server: "itzg/minecraft-server:2026.10.0"  # renovate: datasource=docker depName=itzg/minecraft-server
+  backup: "itzg/mc-backup:2026.10.1"                  # renovate: datasource=docker depName=itzg/mc-backup
 
 discord:
   enabled: false
