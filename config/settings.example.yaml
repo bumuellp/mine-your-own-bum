@@ -5,6 +5,9 @@ server:
   volume_size_gb: 10
   always_on: false
   idle_timeout_minutes: 15
+  keyboard_layout: "de"
+  ssh_keys:
+    - "your-hetzner-ssh-key-name"
   ssh_allowed_ips: []  # Add CIDRs e.g. ["203.0.113.50/32"] or leave empty to drop TCP 22
 
 minecraft:

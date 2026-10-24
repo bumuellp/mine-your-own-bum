@@ -160,6 +160,9 @@ server:
   volume_size_gb: 10           # Persistent block volume
   always_on: false             # Set to true to disable auto-stop
   idle_timeout_minutes: 15     # Auto-stop after 15m of no players
+  keyboard_layout: "de"        # Console keyboard layout ("de", "us", etc.)
+  ssh_keys:                    # Hetzner SSH key names (suppresses password emails)
+    - "your-ssh-key-name"
   ssh_allowed_ips: []          # Whitelist CIDRs for SSH or [] to drop TCP 22
 
 minecraft:
@@ -203,6 +206,8 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 | `volume_size_gb` | `number` | `10` | Size of the persistent Hetzner block volume retaining Minecraft world data across shutdowns (minimum 10 GB). |
 | `always_on` | `bool` | `false` | When `true`, disables the auto-stop watchdog; the VM stays running until stopped manually via workflow. |
 | `idle_timeout_minutes` | `number` | `15` | Minutes with 0 active players before saving the world and triggering automated VM teardown. |
+| `keyboard_layout` | `string` | `"de"` | Virtual console keyboard layout (`"de"`, `"us"`, `"uk"`, etc.) loaded automatically on boot. |
+| `ssh_keys` | `list` | `[...]` | List of SSH key names/IDs in your Hetzner Cloud project. Attaching at least one key suppresses root password emails from Hetzner. |
 | `ssh_allowed_ips` | `list` | `[]` | Whitelist of IPv4/IPv6 CIDR ranges allowed to connect via SSH port 22 (e.g. `["203.0.113.50/32"]`). Leave empty `[]` to drop all port 22 traffic. |
 
 ##### `minecraft`

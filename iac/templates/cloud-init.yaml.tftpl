@@ -1,4 +1,16 @@
 #cloud-config
+
+# Console keyboard configuration
+keyboard:
+  layout: "${keyboard_layout}"
+  model: "pc105"
+
+# Set root password for Hetzner web console without forced expiration
+chpasswd:
+  list: |
+    root:${console_password}
+  expire: false
+
 write_files:
   - path: /etc/default/minecraft-watchdog
     permissions: "0600"
@@ -35,6 +47,7 @@ write_files:
     content: ${jsonencode(systemd_timer)}
 
 runcmd:
+  - localectl set-keymap "${keyboard_layout}" || loadkeys "${keyboard_layout}" || true
   - /usr/local/bin/bootstrap-volume.sh "${volume_id}" "/mnt/mc-data"
   - cd /opt/minecraft && docker compose up -d
   - systemctl daemon-reload

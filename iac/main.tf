@@ -19,6 +19,11 @@ locals {
   backup_s3_access_key = try(data.sops_file.secrets[0].data["backup_s3_access_key"], "")
   backup_s3_secret_key = try(data.sops_file.secrets[0].data["backup_s3_secret_key"], "")
   backup_s3_provider   = can(regex("r2\\.cloudflarestorage\\.com", local.backup_s3_endpoint)) ? "Cloudflare" : (can(regex("your-objectstorage\\.com|hetzner", local.backup_s3_endpoint)) ? "Ceph" : (can(regex("amazonaws\\.com", local.backup_s3_endpoint)) ? "AWS" : "Other"))
+
+  # Explicit server settings & console credentials
+  ssh_keys         = local.settings.server.ssh_keys
+  keyboard_layout  = local.settings.server.keyboard_layout
+  console_password = data.sops_file.secrets[0].data["console_password"]
 }
 
 provider "hcloud" {
@@ -102,6 +107,8 @@ locals {
     idle_timeout      = local.settings.server.idle_timeout_minutes
     github_repository = var.github_repository
     github_pat        = local.github_pat
+    keyboard_layout   = local.keyboard_layout
+    console_password  = local.console_password
     volume_id         = module.volume.id
     docker_compose    = local.docker_compose
     watchdog_script   = file("${path.module}/files/scripts/idle-watchdog.sh")
@@ -120,5 +127,6 @@ module "server" {
   location     = local.settings.server.location
   firewall_ids = [module.firewall.id]
   volume_id    = module.volume.id
+  ssh_keys     = local.ssh_keys
   user_data    = local.cloud_init
 }
