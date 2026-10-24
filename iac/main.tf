@@ -21,6 +21,7 @@ locals {
   backup_s3_provider   = can(regex("r2\\.cloudflarestorage\\.com", local.backup_s3_endpoint)) ? "Cloudflare" : (can(regex("your-objectstorage\\.com|hetzner", local.backup_s3_endpoint)) ? "Ceph" : (can(regex("amazonaws\\.com", local.backup_s3_endpoint)) ? "AWS" : "Other"))
 
   # Explicit server settings & console credentials
+  server_type      = local.settings.server.server_type
   ssh_keys         = local.settings.server.ssh_keys
   keyboard_layout  = local.settings.server.keyboard_layout
   use_golden_image = local.settings.server.use_golden_image
@@ -31,10 +32,15 @@ locals {
   backup_image    = local.settings.containers.backup
 }
 
+data "hcloud_server_type" "server" {
+  name = local.server_type
+}
+
 data "hcloud_image" "golden" {
-  count         = local.use_golden_image ? 1 : 0
-  with_selector = "role=minecraft-golden-image"
-  most_recent   = true
+  count             = local.use_golden_image ? 1 : 0
+  with_selector     = "role=minecraft-golden-image"
+  with_architecture = data.hcloud_server_type.server.architecture
+  most_recent       = true
 }
 
 provider "hcloud" {

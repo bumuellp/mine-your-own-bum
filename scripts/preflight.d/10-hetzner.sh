@@ -56,12 +56,15 @@ else
 			# Validate Golden Image snapshot if enabled
 			USE_GOLDEN="$(get_setting "server" "use_golden_image" || echo "false")"
 			if [ "$USE_GOLDEN" = "true" ]; then
-				HCLOUD_IMAGES_RESP="$(curl -s -H "Authorization: Bearer ${HCLOUD_TOKEN}" "https://api.hetzner.cloud/v1/images?type=snapshot&label_selector=role%3Dminecraft-golden-image")"
+				SERVER_ARCH="$(echo "$TYPE_RESP" | jq -r '.server_types[0].architecture // empty')"
+				ARCH_QUERY=""
+				[ -n "$SERVER_ARCH" ] && ARCH_QUERY="&architecture=${SERVER_ARCH}"
+				HCLOUD_IMAGES_RESP="$(curl -s -H "Authorization: Bearer ${HCLOUD_TOKEN}" "https://api.hetzner.cloud/v1/images?type=snapshot&label_selector=role%3Dminecraft-golden-image${ARCH_QUERY}")"
 				GOLDEN_COUNT="$(echo "$HCLOUD_IMAGES_RESP" | jq '.images | length' 2>/dev/null || echo 0)"
 				if [ "$GOLDEN_COUNT" -gt 0 ]; then
-					echo -e "${GREEN}[✓] Hetzner Golden Image:${NC} Active snapshot with 'role=minecraft-golden-image' verified."
+					echo -e "${GREEN}[✓] Hetzner Golden Image:${NC} Active snapshot with 'role=minecraft-golden-image' (${SERVER_ARCH:-any}) verified."
 				else
-					echo -e "${RED}[✗] Hetzner Golden Image:${NC} server.use_golden_image is true, but no snapshot with 'role=minecraft-golden-image' was found in your Hetzner Cloud project."
+					echo -e "${RED}[✗] Hetzner Golden Image:${NC} server.use_golden_image is true, but no snapshot with 'role=minecraft-golden-image' and architecture '${SERVER_ARCH}' was found in your Hetzner Cloud project."
 					ALL_OK=1
 				fi
 			fi
