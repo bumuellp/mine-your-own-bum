@@ -14,10 +14,14 @@ output "docker_compose" {
     motd                   = local.settings.minecraft.motd
     max_players            = local.settings.minecraft.max_players
     difficulty             = local.settings.minecraft.difficulty
+    online_mode            = local.settings.minecraft.online_mode
+    enforce_secure_profile = local.settings.minecraft.enforce_secure_profile
     whitelist_enabled      = false
     whitelist              = []
     ops                    = []
     rcon_password          = "smoke-test-rcon-secret"
+    minecraft_image        = local.settings.containers.minecraft_server
+    backup_image           = local.settings.containers.backup
     modrinth_projects      = local.settings.minecraft.modrinth_projects
     plugins                = local.settings.minecraft.plugins
     backup_enabled         = local.settings.backup.enabled

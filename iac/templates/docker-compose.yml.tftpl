@@ -16,6 +16,8 @@ services:
       MOTD: ${replace(jsonencode(motd), "$", "$$")}
       MAX_PLAYERS: "${max_players}"
       DIFFICULTY: "${difficulty}"
+      ONLINE_MODE: "${online_mode}"
+      ENFORCE_SECURE_PROFILE: "${enforce_secure_profile}"
       ENABLE_RCON: "true"
       RCON_PORT: "25575"
       RCON_PASSWORD: ${replace(jsonencode(rcon_password), "$", "$$")}

@@ -102,6 +102,8 @@ locals {
     motd                   = local.settings.minecraft.motd
     max_players            = local.settings.minecraft.max_players
     difficulty             = local.settings.minecraft.difficulty
+    online_mode            = local.settings.minecraft.online_mode
+    enforce_secure_profile = local.settings.minecraft.enforce_secure_profile
     whitelist_enabled      = local.settings.minecraft.whitelist_enabled
     whitelist              = local.settings.minecraft.whitelist
     ops                    = local.settings.minecraft.ops

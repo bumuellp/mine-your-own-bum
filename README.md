@@ -172,6 +172,8 @@ minecraft:
   motd: "Mine Your Own Bum"
   max_players: 20
   difficulty: "normal"
+  online_mode: true            # Mojang session authentication (set false for offline/LAN servers)
+  enforce_secure_profile: true # Require signed player chat profiles
   whitelist_enabled: true      # Enforce player whitelist
   whitelist:
     - "Steve"                  # Java username or Bedrock Floodgate UUID
@@ -220,6 +222,8 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 | `motd` | `string` | `"..."` | Message of the day displayed in the multiplayer server list. |
 | `max_players` | `number` | `20` | Maximum simultaneous players allowed. |
 | `difficulty` | `string` | `"normal"` | In-game difficulty (`peaceful`, `easy`, `normal`, `hard`). |
+| `online_mode` | `bool` | `true` | When `true`, authenticates connecting players against Mojang session servers. Set to `false` for offline or LAN-only play. |
+| `enforce_secure_profile` | `bool` | `true` | When `true`, requires players to have a Mojang-signed public key / secure chat profile. Set `false` if using offline mode or clients without signed profiles. |
 | `whitelist_enabled` | `bool` | `true` | When `true`, enforces native player access control. Unauthorized players cannot connect. |
 | `whitelist` | `list` | `[...]` | Whitelisted players. Java players use username (e.g. `"Steve"`). Bedrock players use Floodgate UUIDs (e.g. `"00000000-0000-0000-xxxx-xxxxxxxxxxxx"` derived from Xbox XUID). |
 | `ops` | `list` | `[...]` | Server operators granted permission level 4 (`/gamemode`, `/fwhitelist`, `/kick`, etc.). Format matches `whitelist`. |

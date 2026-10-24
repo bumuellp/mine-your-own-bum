@@ -18,6 +18,8 @@ minecraft:
   motd: "Mine Your Own Bum - On-Demand Crossplay Server"
   max_players: 20
   difficulty: "normal"
+  online_mode: true
+  enforce_secure_profile: true
   whitelist_enabled: true
   whitelist:
     # Java players: username (e.g. "Steve") or UUID
