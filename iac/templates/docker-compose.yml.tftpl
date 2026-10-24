@@ -57,7 +57,7 @@ services:
       start_period: 2m
 %{ if backup_enabled ~}
   mc-backup:
-    image: itzg/mc-backup:2026.10.0
+    image: itzg/mc-backup:2026.10.1
     container_name: mc-backup
     restart: unless-stopped
     stop_grace_period: 30s
@@ -72,17 +72,20 @@ services:
       INITIAL_DELAY: "${backup_initial_delay}"
       BACKUP_INTERVAL: "${backup_interval}"
       PRUNE_BACKUPS_COUNT: "${backup_retention_count}"
+      EXCLUDES: "*.jar,cache,logs,*.tmp,backups"
       TAR_COMPRESS_METHOD: "zstd"
-      ZSTD_PARAMETERS: "-3 --long"
+      TAR_COMPRESS_PARAMETERS: "-3 --long"
 %{ if backup_s3_bucket != "" ~}
       BACKUP_METHOD: "rclone"
-      RCLONE_REMOTE: "backup:${backup_s3_bucket}"
-      RCLONE_DEST_DIR: "minecraft-backups"
+      RCLONE_COMPRESS_METHOD: "zstd"
+      RCLONE_REMOTE: "backup"
+      RCLONE_DEST_DIR: "${backup_s3_bucket}/minecraft-backups"
       RCLONE_CONFIG_BACKUP_TYPE: "s3"
       RCLONE_CONFIG_BACKUP_PROVIDER: ${replace(jsonencode(backup_s3_provider), "$", "$$")}
       RCLONE_CONFIG_BACKUP_ENDPOINT: ${replace(jsonencode(backup_s3_endpoint), "$", "$$")}
       RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID: ${replace(jsonencode(backup_s3_access_key), "$", "$$")}
       RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY: ${replace(jsonencode(backup_s3_secret_key), "$", "$$")}
+      RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET: "true"
 %{ else ~}
       BACKUP_METHOD: "tar"
 %{ endif ~}
