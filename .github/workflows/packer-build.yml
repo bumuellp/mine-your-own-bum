@@ -54,7 +54,7 @@ jobs:
       - name: Setup Packer
         uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3.4.0
         with:
-          version: '1.11.2'
+          version: 'v1.16.2'
 
       - name: Initialize Packer Plugins
         run: packer init packer/minecraft.pkr.hcl
@@ -71,6 +71,8 @@ jobs:
           packer build -color=false packer/minecraft.pkr.hcl
 
       - name: Rotate Old Snapshots
-        env:
-          HCLOUD_TOKEN: ${{ fromJSON(steps.sec.outputs.json).hcloud_token }}
-        run: ./scripts/rotate-snapshots.sh
+        uses: bumuellp/lights-camera-bum-action/rotate-hcloud-snapshots@8a20dcb70418be94bf62a115c808144174044867
+        with:
+          token: ${{ fromJSON(steps.sec.outputs.json).hcloud_token }}
+          label-selector: 'role=minecraft-golden-image'
+          keep: '1'
