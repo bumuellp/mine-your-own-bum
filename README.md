@@ -195,6 +195,10 @@ dns:
   domain: "example.com"        # Registered apex / zone domain
   subname: "mc"                # Subdomain prefix (e.g. mc.example.com)
   ttl: 60
+
+discord:
+  enabled: false               # Deploy serverless slash bot on Cloudflare Workers
+  allowed_user_ids: []         # Optional: Restrict /mc-start and /mc-stop to user IDs
 ```
 Commit `config/settings.yaml` to your repository so GitHub Actions can read your configuration.
 
@@ -252,6 +256,12 @@ Commit `config/settings.yaml` to your repository so GitHub Actions can read your
 | :--- | :---: | :---: | :--- |
 | `minecraft_server` | `string` | `"itzg/minecraft-server:2026.10.0"` | Docker image tag for the Minecraft server container. Tracked and updated automatically by Renovate. |
 | `backup` | `string` | `"itzg/mc-backup:2026.10.1"` | Docker image tag for the Rclone backup sidecar container. Tracked and updated automatically by Renovate. |
+
+##### `discord`
+| Parameter | Type | Default | Description |
+| :--- | :---: | :---: | :--- |
+| `enabled` | `bool` | `false` | Enable the serverless Discord slash-command bot on Cloudflare Workers. See the [Discord Bot Guide](integrations/discord-bot/README.md). |
+| `allowed_user_ids` | `list` | `[]` | Optional list of Discord User IDs permitted to manage the server (`/mc-start`, `/mc-stop`). Leave empty `[]` to allow all members in your guild. |
 
 #### 🛡️ Player Access Control & Whitelisting (Crossplay)
 
