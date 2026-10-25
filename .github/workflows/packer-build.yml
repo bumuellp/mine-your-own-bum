@@ -71,7 +71,7 @@ jobs:
           packer build -color=false packer/minecraft.pkr.hcl
 
       - name: Rotate Old Snapshots
-        uses: bumuellp/lights-camera-bum-action/rotate-hcloud-snapshots@8a20dcb70418be94bf62a115c808144174044867
+        uses: bumuellp/lights-camera-bum-action/rotate-hcloud-snapshots@870559c7f1d87a7fa23f10e67991ec4758318bfb # v1.9.1
         with:
           token: ${{ fromJSON(steps.sec.outputs.json).hcloud_token }}
           label-selector: 'role=minecraft-golden-image'
