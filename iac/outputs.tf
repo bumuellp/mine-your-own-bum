@@ -39,7 +39,7 @@ output "dns_enabled" {
 }
 
 output "dns_provider" {
-  description = "Configured DNS provider (desec or ionos)"
+  description = "Configured DNS provider (desec, ionos, or hetzner)"
   value       = try(local.settings.dns.provider, "desec")
 }
 

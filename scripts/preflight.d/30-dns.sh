@@ -64,4 +64,24 @@ elif [ "$DNS_PROVIDER" = "desec" ]; then
 		echo -e "${RED}[✗] deSEC DNS API:${NC} Authentication failed (HTTP ${HTTP_CODE}): ${BODY}"
 		ALL_OK=1
 	fi
+elif [ "$DNS_PROVIDER" = "hetzner" ]; then
+	RESP="$(curl -s -w "\n%{http_code}" \
+		-H "Authorization: Bearer ${DNS_TOKEN}" \
+		-H "Accept: application/json" \
+		"https://api.hetzner.cloud/v1/zones?name=${DNS_DOMAIN}")"
+	HTTP_CODE="$(echo "$RESP" | tail -n 1)"
+	BODY="$(echo "$RESP" | sed '$d')"
+	if [ "$HTTP_CODE" -eq 200 ]; then
+		if echo "$BODY" | grep -qi "\"name\":[[:space:]]*\"${DNS_DOMAIN}\""; then
+			echo -e "${GREEN}[✓] Hetzner DNS API:${NC} Token authenticated and zone '${DNS_DOMAIN}' found."
+		else
+			echo -e "${YELLOW}[!] Hetzner DNS API:${NC} Token valid, but zone '${DNS_DOMAIN}' was not found in your account."
+			ALL_OK=1
+		fi
+	else
+		echo -e "${RED}[✗] Hetzner DNS API:${NC} Authentication failed (HTTP ${HTTP_CODE}): ${BODY}"
+		ALL_OK=1
+	fi
+else
+	echo -e "${YELLOW}[!] DNS Provider:${NC} '${DNS_PROVIDER}' is not pre-validated (supported: 'desec', 'ionos', 'hetzner')."
 fi

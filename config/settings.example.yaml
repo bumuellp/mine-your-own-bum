@@ -41,7 +41,7 @@ minecraft:
 
 dns:
   enabled: false
-  provider: "desec"  # Supported: "desec", "ionos"
+  provider: "desec"  # Supported: "desec", "ionos", "hetzner"
   domain: "my-minecraft.dedyn.io"
   subname: "mc"
   ttl: 60
