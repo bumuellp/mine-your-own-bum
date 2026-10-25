@@ -19,6 +19,7 @@ sequenceDiagram
     Discord->>Worker: POST / (Ed25519 Signed Interaction Payload)
     Worker->>Worker: Verify Ed25519 signature & check User ACL
     Worker-->>Discord: Deferred Response (Type 5: Bot is thinking...)
+    Discord-->>User: Ephemeral "Thinking..." / Loading Indicator
     par Real-Time TCP Ping (cloudflare:sockets)
         Worker->>Server: Connect to TCP port 25565 (2.5s timeout)
         Server-->>Worker: Port open (Online) / Port closed (Offline)
@@ -28,10 +29,12 @@ sequenceDiagram
     end
     alt Action Blocked (Server already running / In-progress workflow)
         Worker->>Discord: PATCH original response (Status embed / notice)
+        Discord-->>User: Display status notice / current status
     else Action Approved (Server offline & ready to launch)
         Worker->>GitHub: POST /actions/workflows/server-start.yml/dispatches
         GitHub-->>Worker: HTTP 204 No Content
         Worker->>Discord: PATCH original response (🚀 Server starting up...)
+        Discord-->>User: Display updated interaction embed (Server starting up...)
     end
 ```
 
@@ -99,7 +102,8 @@ sequenceDiagram
    - Cloudflare's setup wizard requires creating an initial worker before opening settings or linking CI/CD.
    - Click **Create Application** (or **Create Worker**).
    - Select the **"Hello World"** template.
-   - Name the Worker **`minecraft-discord-bot`** (*Note: You must use this exact name so it matches `wrangler.toml`*).
+   - Name the Worker **`minecraft-discord-bot`** (matching `name` in `wrangler.toml`).
+     *(If you use a custom name, make sure to update `name = "..."` in `integrations/discord-bot/wrangler.toml` to match).*
    - Click **Deploy**.
    - You now have an active worker and assigned URL: `https://minecraft-discord-bot.<your-subdomain>.workers.dev`.
    - *(CI/CD will compile your Rust code and overwrite the "Hello World" placeholder on first deployment).*
@@ -204,7 +208,7 @@ npx wrangler secret put ALLOWED_USER_IDS  # Optional (comma-separated list)
 # 4. Deploy Rust Worker
 npx wrangler deploy \
   --var GITHUB_OWNER="your-github-username" \
-  --var GITHUB_REPO="mine-my-own-bum" \
+  --var GITHUB_REPO="your-minecraft-repo" \
   --var SERVER_FQDN="mc.example.com"
 ```
 
