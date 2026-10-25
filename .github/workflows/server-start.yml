@@ -97,7 +97,7 @@ jobs:
 
       - name: Sync DNS IPv4 Record
         if: steps.tofu_apply.outputs.dns_enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@870559c7f1d87a7fa23f10e67991ec4758318bfb # v1.9.1
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@ac10d6046ee766e3bd5b7d036c4d1aaf5fb71589 # v1.9.2
         with:
           provider: ${{ steps.tofu_apply.outputs.dns_provider }}
           token: ${{ steps.tofu_apply.outputs.dns_token }}
@@ -110,7 +110,7 @@ jobs:
 
       - name: Sync DNS IPv6 Record
         if: steps.tofu_apply.outputs.dns_enabled == 'true' && steps.tofu_apply.outputs.ipv6 != ''
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@870559c7f1d87a7fa23f10e67991ec4758318bfb # v1.9.1
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@ac10d6046ee766e3bd5b7d036c4d1aaf5fb71589 # v1.9.2
         with:
           provider: ${{ steps.tofu_apply.outputs.dns_provider }}
           token: ${{ steps.tofu_apply.outputs.dns_token }}
