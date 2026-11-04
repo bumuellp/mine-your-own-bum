@@ -3,3 +3,19 @@
 config/secrets.enc.yaml
 config/settings.yaml
 .sops.yaml
+
+# Project-specific documentation and metadata
+README.md
+LICENSE
+
+# Repository-specific Git configuration
+.gitignore
+.gitattributes
+
+# Quality gates & scanners (repositories have language-specific linters and configurations)
+.pre-commit-config.yaml
+trivy.yaml
+.trivyignore
+
+# Template sync configuration (allows child repositories to define custom ignore rules)
+.templatesyncignore
