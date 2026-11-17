@@ -27,7 +27,7 @@ server:
   ssh_allowed_ips: [] # Whitelist CIDRs for SSH or [] to drop TCP 22
 
 minecraft:
-  server_type: "FABRIC" # "FABRIC" (vanilla mechanics) or "PAPER"
+  server_type: "FABRIC" # "FABRIC", "PAPER", "NEOFORGE", "MODRINTH", etc.
   version: "26.3" # renovate: datasource=mojang-java
   jvm_memory: "5G" # Java heap allocation (-Xmx)
   motd: "Mine Your Own Bum" # Message of the day in server list
@@ -40,7 +40,8 @@ minecraft:
     - "Steve" # Java username or Bedrock Floodgate UUID
   ops:
     - "Steve" # Server operator (permission level 4)
-  modrinth_projects: # Dynamic Fabric mods loaded from Modrinth
+  modrinth_modpack: "" # Optional Modrinth modpack slug (e.g. "create-combined")
+  modrinth_projects: # Dynamic mods loaded from Modrinth
     - "fabric-api"
     - "lithium"
     - "ferrite-core"
@@ -48,7 +49,9 @@ minecraft:
     - "carpet"
     - "geyser:beta" # Geyser continuous beta channel build
     - "floodgate:beta" # Floodgate continuous beta channel build
-  plugins: [] # Direct jar download URLs (for Paper servers)
+  curseforge_projects: [] # Optional CurseForge project slugs/IDs (requires cf_api_key in SOPS)
+  rcon_startup_commands: [] # Optional startup RCON commands (supports ${AUTH_PASSWORD})
+  plugins: [] # Direct jar download URLs (for Paper/Bukkit plugins)
 
 dns:
   enabled: false # Set true once DNS provider credentials are configured
@@ -66,6 +69,8 @@ backup:
 containers:
   minecraft_server: "itzg/minecraft-server:2026.10.0" # renovate: datasource=docker depName=itzg/minecraft-server
   backup: "itzg/mc-backup:2026.10.1" # renovate: datasource=docker depName=itzg/mc-backup
+  cloudflared: "cloudflare/cloudflared:2026.3.0" # renovate: datasource=docker depName=cloudflare/cloudflared
+  mc_agent: "ghcr.io/bumuellp/mc-agent:0.1.0" # renovate: datasource=docker depName=ghcr.io/bumuellp/mc-agent
 
 packer:
   arm_builder: "cax11" # Model used to build ARM golden image snapshot
@@ -77,7 +82,9 @@ packer:
 
 discord:
   enabled: false # Deploy serverless Discord bot on Cloudflare Workers
-  allowed_user_ids: [] # Restrict /mc-start, /mc-stop to specific Discord IDs
+  command_channel_id: "" # Optional: restrict operational commands to #mc-commands
+  chat_channel_id: "" # Optional: restrict /mc-say to #mc-chat
+  allowed_user_ids: [] # Restrict lifecycle & admin commands to specific Discord IDs
 ```
 
 ---
@@ -105,8 +112,8 @@ discord:
 
 | Parameter | Type | Default | Description |
 |---|:---:|:---:|---|
-| `server_type` | `string` | `"FABRIC"` | Minecraft server implementation (`"FABRIC"` for 100% vanilla redstone/farm mechanics, or `"PAPER"`). |
-| `version` | `string` | `"26.3"` | Target Minecraft version (e.g. `"26.3"`, `"LATEST"`). Tracked automatically by Renovate via `# renovate: datasource=mojang-java`. |
+| `server_type` | `string` | `"FABRIC"` | Minecraft server implementation (`"FABRIC"`, `"PAPER"`, `"NEOFORGE"`, `"MODRINTH"`, etc.). |
+| `version` | `string` | `"26.3"` | Target Minecraft version (e.g. `"26.3"`, `"1.21.1"`, `"LATEST"`). Tracked automatically by Renovate via `# renovate: datasource=mojang-java`. |
 | `jvm_memory` | `string` | `"5G"` | Java heap memory allocation (`-Xmx`). Aikar's GC flags are applied automatically for optimal pause times. |
 | `motd` | `string` | `"..."` | Message of the day displayed in the multiplayer server list. |
 | `max_players` | `number` | `20` | Maximum simultaneous players allowed. |
@@ -116,8 +123,11 @@ discord:
 | `whitelist_enabled` | `bool` | `true` | When `true`, enforces native player access control. Unauthorized players cannot connect. See [Player Management Guide](PLAYER_MANAGEMENT.md). |
 | `whitelist` | `list` | `[...]` | Whitelisted players. Java players use username (e.g. `"Steve"`). Bedrock players use Floodgate UUIDs (e.g. `"00000000-0000-0000-xxxx-xxxxxxxxxxxx"` derived from Xbox XUID). |
 | `ops` | `list` | `[...]` | Server operators granted permission level 4 (`/gamemode`, `/fwhitelist`, `/kick`, etc.). Format matches `whitelist`. |
-| `modrinth_projects` | `list` | `[...]` | Fabric mods resolved and downloaded from Modrinth automatically on boot. Individual release channels or versions can be specified using `slug:channel` (e.g. `geyser:beta`, `floodgate:beta`) or pinned versions (`slug:version`). Unqualified mods default to stable `release`. |
-| `plugins` | `list` | `[]` | HTTP/HTTPS direct download URLs for jar plugins (primarily for Paper servers or standalone jars). |
+| `modrinth_modpack` | `string` | `""` | Optional Modrinth modpack slug or version (e.g. `"create-combined"`). Automatically increases the container startup healthcheck `start_period` to `5m`. |
+| `modrinth_projects` | `list` | `[...]` | Mods/plugins resolved and downloaded from Modrinth automatically on boot (loader-specific). Individual release channels or versions can be specified using `slug:channel` (e.g. `geyser:beta`, `floodgate:beta`) or pinned versions (`slug:version`). Unqualified mods default to stable `release`. |
+| `curseforge_projects` | `list` | `[]` | Optional CurseForge project slugs or numeric IDs downloaded automatically on boot. Requires `cf_api_key` in `config/secrets.enc.yaml`. |
+| `rcon_startup_commands` | `list` | `[]` | Optional RCON commands executed automatically once the server finishes booting (e.g. configuring offline-mode auth mods). Supports `${AUTH_PASSWORD}` placeholder interpolation from SOPS `auth_password`. |
+| `plugins` | `list` | `[]` | HTTP/HTTPS direct download URLs for jar plugins (primarily for Paper/Bukkit servers or standalone jars). |
 
 ---
 
@@ -156,6 +166,8 @@ discord:
 |---|:---:|:---:|---|
 | `minecraft_server` | `string` | `"itzg/minecraft-server:2026.10.0"` | Docker image tag for the Minecraft server container. Tracked and updated automatically by Renovate. |
 | `backup` | `string` | `"itzg/mc-backup:2026.10.1"` | Docker image tag for the Rclone backup sidecar container. Tracked and updated automatically by Renovate. |
+| `cloudflared` | `string` | `"cloudflare/cloudflared:2026.3.0"` | Docker image tag for the outbound Cloudflare Tunnel sidecar (activated when `cloudflare_tunnel_token` is set in SOPS). Tracked by Renovate. |
+| `mc_agent` | `string` | `"ghcr.io/bumuellp/mc-agent:0.1.0"` | Docker image tag for the Rust RCON/telemetry/chat-bridge sidecar agent (activated alongside `cloudflared`). Tracked by Renovate. |
 
 ---
 
@@ -172,12 +184,14 @@ discord:
 ### `discord`
 
 > [!TIP]
-> For full instructions on creating the Discord Application, generating worker tokens, and configuring slash commands, see the [Discord Bot Guide](../integrations/discord-bot/README.md).
+> For full instructions on creating the Discord Application, Workers VPC tunnel, and configuring slash commands, see the [Discord Bot Guide](../integrations/discord-bot/README.md).
 
 | Parameter | Type | Default | Description |
 |---|:---:|:---:|---|
 | `enabled` | `bool` | `false` | Enable the serverless Discord slash-command bot on Cloudflare Workers. |
-| `allowed_user_ids` | `list` | `[]` | Optional list of Discord User IDs permitted to manage the server (`/mc-start`, `/mc-stop`). Leave empty `[]` to allow all members in your guild. |
+| `command_channel_id` | `string` | `""` | Optional Discord Channel ID (e.g. `#mc-commands`). When set, operational/admin commands (`/mc-start`, `/mc-stop`, `/mc-status`, `/mc-players`, `/mc-top`, `/mc-whitelist`, `/mc-backup`, `/mc-restart`, `/mc-logs`, `/mc-cmd`) are accepted only in this channel. |
+| `chat_channel_id` | `string` | `""` | Optional Discord Channel ID (e.g. `#mc-chat`). When set, `/mc-say` is accepted only in this channel (keeping chat separate from server commands). |
+| `allowed_user_ids` | `list` | `[]` | Optional list of Discord User IDs granted **Admin / Lifecycle** access (`/mc-start`, `/mc-stop`, `/mc-whitelist`, `/mc-backup`, `/mc-restart`, `/mc-cmd`). When empty `[]`, sensitive mutating admin commands (`/mc-whitelist`, `/mc-backup`, `/mc-restart`, `/mc-cmd`) **fail closed** (denied for all users) while `/mc-start`, `/mc-stop`, `/mc-say`, and read-only commands remain accessible to channel members. |
 
 ---
 
@@ -187,7 +201,7 @@ This repository is pre-configured to work seamlessly with **[Renovate](https://g
 
 ### How Renovate Works Here
 * **Minecraft Releases**: In `config/settings.yaml`, the comment `# renovate: datasource=mojang-java` instructs Renovate to monitor Mojang's official release metadata. When a new Minecraft version is published, Renovate opens a pull request.
-* **Docker Containers**: The comments `# renovate: datasource=docker depName=itzg/minecraft-server` and `itzg/mc-backup` allow Renovate to track container updates.
+* **Docker Containers**: The `# renovate: datasource=docker ...` annotations on `itzg/minecraft-server`, `itzg/mc-backup`, `cloudflare/cloudflared`, and `ghcr.io/bumuellp/mc-agent` allow Renovate to track all container updates.
 * **GitHub Actions**: Workflows in `.github/workflows/` pinned to commit SHAs are automatically tracked and updated with commit notes.
 
 ### Installing Renovate on Your Repository

@@ -16,31 +16,27 @@ It combines ephemeral compute instances with persistent block volume retention, 
 
 ```
                     [ Discord User ] (Optional)
-                           | (/mc-start, /mc-stop)
-                           v
-                [ Cloudflare Worker (Rust) ]
-                           |
-                           v
-                 [ GitHub Actions API ] <---+ (Manual Workflow Dispatch / Schedule)
-                    /              \
-                   v                v
-         [ server-start.yml ]     [ server-stop.yml ] <---+
-                 |                        |               |
-     [ OpenTofu / tofu-bum ]  [ OpenTofu / tofu-bum ]     | (Idle Timeout
-     - Attaches Block Volume       - Destroy VM           |  Watchdog)
-     - Boots Cloud-Init Instance                          |
-     - Updates Dynamic DNS                                |
-                 |                                        |
-         (Server Running)                                 |
-                 |                                        |
-       [ Idle Watchdog Timer ]                            |
-       - Monitors RCON Players                            |
-       - Flushes World Chunks                             |
-       - Dispatches Teardown -----------------------------+
+             (/mc-start .. /mc-status) | (/mc-players, /mc-say, /mc-cmd...)
+                                       v
+                        [ Cloudflare Worker (Rust) ]
+                        /                         \
+      (Lifecycle API)  v                           v  (Workers VPC Binding)
+       [ GitHub Actions API ]              [ cloudflared Tunnel ]
+         /               \                           | (Outbound Only)
+        v                 v                          v
+[server-start.yml]  [server-stop.yml] <--- [ mc-agent Sidecar ] <--> [ Minecraft ]
+        |                 ^                  (RCON, Telemetry,          (RCON +
+  [ OpenTofu /            |  (Idle            Log Tailer)            latest.log)
+    tofu-bum ]            |  Watchdog)               |
+  - Attach Volume         +--------------------------+
+  - Provision VM & DNS                               v
+                                         [ Discord Webhooks ]
+                                       (#mc-commands & #mc-chat)
 
    ──────────────────────────────────────────────────────────────
    Independent CI/CD Lifecycle (Triggers on Code / Dependency Changes):
    • Packer Builder        -> Pre-bakes golden snapshot image (packer-build.yml)
+   • mc-agent Builder      -> Publishes multi-arch GHCR image (build-mc-agent.yml)
    • Cloudflare Deployer   -> Builds Rust WASM & deploys Discord worker
    • Command Synchronizer  -> Updates Discord slash commands via REST API
 ```
@@ -48,10 +44,11 @@ It combines ephemeral compute instances with persistent block volume retention, 
 * **Pay-Per-Play Model (~€0.45/month idle)**: Compute instances are destroyed when not in use. You only pay for the idle 10 GB persistent block volume; compute costs drop to **€0.00/h** when stopped.
 * **Auto-Stop Idle Watchdog**: An on-server systemd daemon detects 0 active players, cleanly saves world chunks via RCON, and triggers automated teardown.
 * **Zero-Loss Graceful ACPI Teardown**: Intercepts ACPI power signals, allowing systemd and Docker to trap SIGTERM, cleanly flush world chunks, and unmount block storage safely before VM destruction.
-* **Java & Bedrock Crossplay**: Pre-configured with GeyserMC and Floodgate, allowing PC, mobile, and console players to play together on standard ports (`25565` Java, `19132` Bedrock).
+* **Declarative Loader & Modpack Support**: Switch cleanly between Vanilla/Fabric (e.g. Geyser + Floodgate Java/Bedrock crossplay) and modded stacks (e.g. NeoForge, Modrinth modpacks, CurseForge mods) purely via `config/settings.yaml`.
+* **Zero-Trust Sidecar & Live Chat Bridge**: `mc-agent` + `cloudflared` connect via **Cloudflare Workers VPC** (free tier, no custom domain needed) for live Discord chat bridging, boot ready embeds, RCON commands, host telemetry, and redacted log tailing without opening extra firewall ports.
 * **GitOps Secrets with Age + SOPS**: Store encrypted provider tokens and credentials directly in your Git repository.
 * **Client-Side State Encryption**: End-to-end client-side encryption of OpenTofu state files on the S3 backend using **PBKDF2** and **AES-GCM** (`aes_gcm`).
-* **Serverless Discord Bot**: Optional slash-command bot written in pure Rust compiled to WebAssembly on Cloudflare Workers (100% free tier).
+* **Serverless Discord Bot**: Optional 11-command slash bot written in pure Rust compiled to WebAssembly on Cloudflare Workers (100% free tier).
 
 ---
 
@@ -67,7 +64,7 @@ Follow this structured journey to set up, operate, and customize your server:
 | **4** | [🛡️ **Player Management & Whitelist**](docs/PLAYER_MANAGEMENT.md) | Crossplay access control, `/whitelist` vs `/fwhitelist`, Bedrock UUID resolution, and operators. |
 | **5** | [🎮 **Connecting to the Server**](docs/CONNECTING.md) | Client connection instructions for Java, Bedrock (Mobile/PC), and Consoles (BedrockTogether). |
 | **6** | [🔧 **Operations & Management**](docs/OPERATIONS.md) | Server lifecycle, automated idle watchdog, R2 off-site backups, and Packer golden images. |
-| **7** | [🤖 **Discord Bot Guide**](integrations/discord-bot/README.md) | Optional serverless slash-command bot (`/mc-start`, `/mc-stop`, `/mc-status`) on Cloudflare Workers. |
+| **7** | [🤖 **Discord Bot Guide**](integrations/discord-bot/README.md) | Optional serverless slash-command bot (11 commands, RCON/telemetry via Workers VPC, live chat bridge) on Cloudflare Workers. |
 | **8** | [🩺 **Troubleshooting & FAQ**](docs/TROUBLESHOOTING.md) | Unlocking OpenTofu locks, DNS negative caching on rapid restarts, offline-mode players, and fixes. |
 
 ---

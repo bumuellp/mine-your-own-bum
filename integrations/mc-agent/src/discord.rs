@@ -103,6 +103,7 @@ impl Default for DiscordWebhookClient {
 
 impl DiscordWebhookClient {
     pub fn new() -> Self {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let client = Client::builder()
             .timeout(Duration::from_secs(5))
             .build()
@@ -192,5 +193,10 @@ mod tests {
         assert_eq!(fields[0]["value"], "`N/A`");
         assert_eq!(fields[1]["value"], "`N/A:25565`");
         assert_eq!(fields[2]["value"], "`fsn1`");
+    }
+
+    #[test]
+    fn test_discord_webhook_client_initializes_with_ring_provider() {
+        let _client = DiscordWebhookClient::new();
     }
 }

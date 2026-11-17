@@ -1,6 +1,10 @@
-# 🎮 Discord Slash-Command Bot (Rust + Cloudflare Workers)
+# 🎮 Discord Slash-Command Bot & Sidecar Bridge (Rust + Cloudflare Workers VPC)
 
-A serverless Discord slash-command bot written in **Rust** using [`workers-rs`](https://github.com/cloudflare/workers-rs), compiled to WebAssembly, and hosted on **Cloudflare Workers** (100% free tier). It dispatches GitHub Actions workflows (`server-start.yml` and `server-stop.yml`) to provision and destroy your ephemeral Minecraft server on Hetzner Cloud.
+A serverless Discord slash-command bot written in **Rust** using [`workers-rs`](https://github.com/cloudflare/workers-rs), compiled to WebAssembly, and hosted on **Cloudflare Workers** (100% free tier — works with your free `*.workers.dev` subdomain, no custom domain required).
+
+It operates in a **hybrid two-path architecture**:
+1. **Lifecycle Path (GitHub Actions API)**: Dispatches `server-start.yml` and `server-stop.yml` to provision or destroy the Hetzner VM.
+2. **Zero-Trust Sidecar Path (Cloudflare Workers VPC)**: Connects securely over an outbound-only `cloudflared` tunnel to [`mc-agent`](../mc-agent/README.md) on the VM for live RCON commands, host telemetry, sanitized log tailing, and live Discord chat bridging.
 
 ---
 
@@ -12,29 +16,26 @@ sequenceDiagram
     actor User as Discord User
     participant Discord as Discord API Gateway
     participant Worker as Cloudflare Worker (Rust WASM)
-    participant Server as Minecraft Server (Hetzner)
     participant GitHub as GitHub Actions API
+    participant VPC as Cloudflare Workers VPC
+    participant Agent as mc-agent Sidecar (Hetzner)
+    participant MC as Minecraft Server (RCON + Logs)
 
-    User->>Discord: Run /mc-start, /mc-stop, or /mc-status
-    Discord->>Worker: POST / (Ed25519 Signed Interaction Payload)
-    Worker->>Worker: Verify Ed25519 signature & check User ACL
+    User->>Discord: Run slash command (/mc-start.. /mc-say)
+    Discord->>Worker: POST / (Ed25519 Signed Interaction)
+    Worker->>Worker: Verify Ed25519 signature, Channel & Tiered ACL
     Worker-->>Discord: Deferred Response (Type 5: Bot is thinking...)
-    Discord-->>User: Ephemeral "Thinking..." / Loading Indicator
-    par Real-Time TCP Ping (cloudflare:sockets)
-        Worker->>Server: Connect to TCP port 25565 (2.5s timeout)
-        Server-->>Worker: Port open (Online) / Port closed (Offline)
-    and GitHub Concurrency Check
-        Worker->>GitHub: GET /actions/runs?status=in_progress
-        GitHub-->>Worker: Return active workflow list
-    end
-    alt Action Blocked (Server already running / In-progress workflow)
-        Worker->>Discord: PATCH original response (Status embed / notice)
-        Discord-->>User: Display status notice / current status
-    else Action Approved (Server offline & ready to launch)
-        Worker->>GitHub: POST /actions/workflows/server-start.yml/dispatches
-        GitHub-->>Worker: HTTP 204 No Content
-        Worker->>Discord: PATCH original response (🚀 Server starting up...)
-        Discord-->>User: Display updated interaction embed (Server starting up...)
+
+    alt Lifecycle Command (/mc-start, /mc-stop, /mc-status)
+        Worker->>MC: TCP ping port 25565 (cloudflare:sockets)
+        Worker->>GitHub: Inspect active runs / dispatch workflow
+        Worker->>Discord: PATCH response embed
+    else Live Sidecar Command (/mc-players, /mc-top, /mc-whitelist, /mc-backup, /mc-restart, /mc-logs, /mc-cmd, /mc-say)
+        Worker->>VPC: env.service("MC_AGENT").fetch(...)
+        VPC->>Agent: Encrypted cloudflared tunnel (Authorization: Bearer <secret>)
+        Agent->>MC: Execute RCON / Read host telemetry / Tail latest.log
+        Agent-->>Worker: JSON response
+        Worker->>Discord: PATCH response embed
     end
 ```
 
@@ -43,11 +44,12 @@ sequenceDiagram
 ## ⚡ Features
 
 * **Zero JS/TS in Runtime**: 100% pure Rust compiled to WebAssembly (`.wasm`) using `edition = "2024"`.
-* **Direct TCP Server Ping (Port 25565)**: Pings the server FQDN in real-time over TCP via `cloudflare:sockets` to report actual Minecraft connectivity and guard against starting an already-running server.
-* **Instant Interaction Acknowledgement**: Uses Discord's deferred response pattern (`type: 5`) to strictly comply with Discord's 3-second SLA while background TCP pings and workflow dispatches run.
-* **Concurrency & Mutex Protection**: Inspects GitHub's Actions API to prevent duplicate starts or conflicts with ongoing workflows.
-* **Role / User Access Control**: Restrict operational commands to specific Discord User IDs via `ALLOWED_USER_IDS` in `config/settings.yaml`.
-* **Zero 24/7 Hosting Costs**: Runs entirely on Cloudflare Workers (free tier includes 100,000 requests/day).
+* **Zero Inbound Firewall Exposure**: `mc-agent` runs on an isolated internal Docker network; `cloudflared` dials outbound to Cloudflare edge, so neither RCON (`25575`) nor HTTP (`8080`) is exposed publicly.
+* **Free-Tier Cloudflare Workers VPC**: Binds the worker directly to `mc-agent` via `[[vpc_services]]` (`MC_AGENT`) on `*.workers.dev` with no custom domain required.
+* **Dual-Channel Separation**: Optionally isolate operational commands in `#mc-commands` (`COMMAND_CHANNEL_ID`) and in-game chat `/mc-say` in `#mc-chat` (`CHAT_CHANNEL_ID`).
+* **Tiered Fail-Closed Access Control**: Public/read-only commands and `/mc-say` stay usable for players, while destructive/admin commands (`/mc-whitelist`, `/mc-backup`, `/mc-restart`, `/mc-cmd`) strictly fail closed unless callers are listed in `ALLOWED_USER_IDS`.
+* **Direct TCP Server Ping & GitHub Mutex**: Pings port `25565` via `cloudflare:sockets` and inspects GitHub Actions concurrency before starting/stopping.
+* **Live Chat Bridge & Boot Notification**: `mc-agent` tails `latest.log` (Vanilla, Fabric, NeoForge, Paper) and pushes chat/join/leave webhooks + boot-ready embeds directly to Discord.
 
 ---
 
@@ -55,16 +57,16 @@ sequenceDiagram
 
 | Responsibility | Type | Description |
 |---|---|---|
-| **Discord App & Bot Creation** | 🧑‍💻 **Manual (One-Time)** | Create application in Discord Developer Portal; copy `Application ID`, `Public Key`, and `Bot Token`. |
+| **Discord App, Bot & Webhooks** | 🧑‍💻 **Manual (One-Time)** | Create application in Discord Developer Portal; create webhooks for `#mc-commands` & `#mc-chat` (and copy Channel IDs if separating channels). |
 | **Bot Guild Invite** | 🧑‍💻 **Manual (One-Time)** | Invite bot to your Discord server using OAuth2 URL Generator (`bot`, `applications.commands`). |
-| **Cloudflare Workers Subdomain** | 🧑‍💻 **Manual (One-Time)** | Initialize your `*.workers.dev` subdomain in the Cloudflare Dashboard. |
-| **Secrets Management (SOPS)** | 🧑‍💻 **Manual (One-Time)** | Encrypt Discord credentials & Cloudflare API token in `config/secrets.enc.yaml`. |
-| **Enable in Settings** | 🧑‍💻 **Manual (One-Time)** | Set `discord.enabled: true` in `config/settings.yaml`. |
+| **Cloudflare Worker, Tunnel & VPC** | 🧑‍💻 **Manual (One-Time)** | Set up `*.workers.dev`, create Cloudflare Tunnel (`cloudflared` token) + Workers VPC service (`npx wrangler vpc service create`), and add `[[vpc_services]]` in `wrangler.toml`. |
+| **Secrets Management (SOPS)** | 🧑‍💻 **Manual (One-Time)** | Encrypt Discord credentials, `agent_shared_secret`, `cloudflare_tunnel_token`, webhooks, and Cloudflare API token in `config/secrets.enc.yaml`. |
+| **Enable in Settings** | 🧑‍💻 **Manual (One-Time)** | Set `discord.enabled: true` (and optional channel IDs / `allowed_user_ids`) in `config/settings.yaml`. |
 | **Link Interactions Endpoint** | 🧑‍💻 **Manual (One-Time)** | Set `Interactions Endpoint URL` in Discord Portal after first deployment. |
-| **Rust Lint & Verification** | 🤖 **Automated (CI)** | Runs `cargo clippy`, `cargo fmt --check`, and `cargo check` on every pull request & push. |
-| **Cloudflare Worker Build & Deploy** | 🤖 **Automated (CI)** | Compiles Rust to `.wasm` via `worker-build` and deploys to Cloudflare via `wrangler-action`. |
-| **Worker Secrets Sync** | 🤖 **Automated (CI)** | Decrypts SOPS secrets via `SOPS_AGE_KEY` in CI and updates Worker secrets via Wrangler. |
-| **Slash Command Registration** | 🤖 **Automated (CI)** | Executes `scripts/register-commands.sh` against Discord REST API when script changes or when triggered via `workflow_dispatch`. |
+| **Rust Lint & Verification** | 🤖 **Automated (CI)** | Runs `cargo clippy`, `cargo fmt --check`, `cargo test`, and `cargo check` on every pull request & push. |
+| **Cloudflare Worker Build & Deploy** | 🤖 **Automated (CI)** | Compiles Rust to `.wasm` via `worker-build` and deploys to Cloudflare via `lights-camera-bum-action`. |
+| **Worker Secrets Sync** | 🤖 **Automated (CI)** | Decrypts SOPS secrets via `SOPS_AGE_KEY` in CI and updates Worker secrets (`AGENT_SHARED_SECRET`, etc.) via Wrangler. |
+| **Slash Command Registration** | 🤖 **Automated (CI)** | Executes `scripts/register-commands.sh` (all 11 slash commands) against Discord REST API when script changes or when triggered manually. |
 
 ---
 
@@ -107,12 +109,44 @@ sequenceDiagram
    - Click **Deploy**.
    - You now have an active worker and assigned URL: `https://minecraft-discord-bot.<your-subdomain>.workers.dev`.
    - *(CI/CD will compile your Rust code and overwrite the "Hello World" placeholder on first deployment).*
-3. **Generate CI/CD API Token (Worker-Scoped)**:
-   - On your newly created worker's page, go to **Settings → Builds** (or **CI/CD**).
-   - In the **External CI/CD** section, find **API token for external CI/CD** and click **Create Token**.
-   - Cloudflare will automatically generate an API token pre-scoped with the exact permissions needed to deploy, build, and set secrets for this worker (analogous to the bucket-scoped "Create Token" button in Cloudflare R2).
-   - Copy the generated API token.
-   - *(Alternative: You can also create an account-level token under **My Profile → API Tokens → Create Token** using the **Edit Cloudflare Workers** template).*
+3. **Generate CI/CD API Token (Worker-Scoped or Account-Scoped)**:
+   - On your newly created worker's page, go to **Settings → Builds** (or **CI/CD**) → **External CI/CD** → **API token for external CI/CD** → **Create Token** (or create an account token under **My Profile → API Tokens** with **Edit Cloudflare Workers** + **Cloudflare Tunnel: Edit** + **Workers VPC: Edit** if managing tunnels/VPC via CLI).
+   - Copy the generated API token (`cloudflare_api_token`).
+4. **Create Cloudflare Tunnel & Workers VPC Service *(Zero-Trust Sidecar Bridge, Free Tier)***:
+   > [!NOTE]
+   > Cloudflare Workers VPC works directly on your free `*.workers.dev` worker without purchasing or transferring a custom domain to Cloudflare.
+   1. In the Cloudflare Dashboard, open **Workers & Pages → Workers VPC → Tunnels** (or **Zero Trust → Networks → Tunnels**):
+      - Click **Create a tunnel** → choose **Cloudflared** → name it (e.g. `mc-agent-tunnel`).
+      - Copy the **Tunnel Connector Token** (starts with `eyJ...`) for `cloudflare_tunnel_token` in SOPS, and note the **Tunnel UUID** (you do **not** need to configure Public Hostnames).
+   2. Register a **Workers VPC Service** pointing to `mc-agent:8080` on that tunnel:
+      ```bash
+      npx wrangler login
+      npx wrangler vpc service create mc-agent \
+        --type http \
+        --tunnel-id <YOUR_TUNNEL_UUID> \
+        --hostname mc-agent \
+        --http-port 8080
+      ```
+      Copy the returned **`Service ID`** (`service_id`).
+   3. Bind the VPC service in `integrations/discord-bot/wrangler.toml`:
+      ```toml
+      [[vpc_services]]
+      binding = "MC_AGENT"
+      service_id = "<YOUR_VPC_SERVICE_ID>"
+      remote = true
+      ```
+5. **Create Discord Channel Webhooks & Copy Channel IDs *(For Chat Bridge & Boot Notification)***:
+   - Enable **Developer Mode** in Discord (`User Settings → Advanced → Developer Mode`).
+   - Create two channels (recommended): e.g. `#mc-commands` and `#mc-chat`.
+   - Right-click each channel → **Copy Channel ID** (used for `discord.command_channel_id` and `discord.chat_channel_id`).
+   - In each channel: **Edit Channel → Integrations → Webhooks → New Webhook → Copy Webhook URL**:
+     - `#mc-chat` Webhook URL → `discord_chat_webhook_url` (live player chat, joins, leaves).
+     - `#mc-commands` Webhook URL → `discord_command_webhook_url` (rich "Server Online & Ready" boot embeds; falls back to `discord_chat_webhook_url` if omitted).
+6. **Generate Shared Bearer Secret**:
+   ```bash
+   openssl rand -hex 32
+   ```
+   Save this random hex token as `agent_shared_secret` in SOPS (shared between the Worker and `mc-agent`).
 
 ---
 
@@ -132,15 +166,18 @@ The Cloudflare Worker requires a GitHub PAT to query active workflow runs and di
 
 ### Step 4: Configure Repository Settings & Secrets
 
-#### 1. Enable Discord Bot in `config/settings.yaml`
+#### 1. Enable Discord Bot & Channels in `config/settings.yaml`
 
 Edit `config/settings.yaml` to enable the integration:
 
 ```yaml
 discord:
   enabled: true # Must be true for CI to deploy the worker
-  # Optional: Restrict /mc-start and /mc-stop to specific Discord user IDs.
-  # Leave empty ([]) to allow all members with slash command access.
+  # Optional: Separate #mc-commands (operational/admin commands) from #mc-chat (/mc-say & live chat)
+  command_channel_id: "111111111111111111"
+  chat_channel_id: "222222222222222222"
+  # Required for mutating admin commands (/mc-whitelist, /mc-backup, /mc-restart, /mc-cmd).
+  # Also restricts /mc-start and /mc-stop when populated.
   allowed_user_ids:
     - "123456789012345678"
 ```
@@ -161,9 +198,14 @@ discord_public_key: "<YOUR_DISCORD_PUBLIC_KEY>"
 discord_application_id: "<YOUR_DISCORD_APPLICATION_ID>"
 discord_bot_token: "<YOUR_DISCORD_BOT_TOKEN>"
 github_pat: "<YOUR_GITHUB_PAT>"
+# Zero-Trust Sidecar Agent & Webhooks
+cloudflare_tunnel_token: "<YOUR_CLOUDFLARE_TUNNEL_CONNECTOR_TOKEN>"
+agent_shared_secret: "<YOUR_64_CHAR_HEX_SHARED_SECRET>"
+discord_chat_webhook_url: "https://discord.com/api/webhooks/..."
+discord_command_webhook_url: "https://discord.com/api/webhooks/..."
 ```
 
-*(Alternatively, you can provide these as GitHub Actions repository secrets: `CLOUDFLARE_API_TOKEN`, `DISCORD_PUBLIC_KEY`, `DISCORD_APPLICATION_ID`, `DISCORD_BOT_TOKEN`, and `PAT_WATCHDOG`).*
+*(Alternatively, Worker secrets `CLOUDFLARE_API_TOKEN`, `DISCORD_PUBLIC_KEY`, `DISCORD_APPLICATION_ID`, `DISCORD_BOT_TOKEN`, `AGENT_SHARED_SECRET`, and `PAT_WATCHDOG` can be provided via GitHub Actions repository secrets.)*
 
 ---
 
@@ -203,13 +245,16 @@ cd integrations/discord-bot
 npx wrangler secret put DISCORD_PUBLIC_KEY
 npx wrangler secret put DISCORD_APPLICATION_ID
 npx wrangler secret put GITHUB_PAT
+npx wrangler secret put AGENT_SHARED_SECRET
 npx wrangler secret put ALLOWED_USER_IDS  # Optional (comma-separated list)
 
 # 4. Deploy Rust Worker
 npx wrangler deploy \
   --var GITHUB_OWNER="your-github-username" \
   --var GITHUB_REPO="your-minecraft-repo" \
-  --var SERVER_FQDN="mc.example.com"
+  --var SERVER_FQDN="mc.example.com" \
+  --var COMMAND_CHANNEL_ID="111111111111111111" \
+  --var CHAT_CHANNEL_ID="222222222222222222"
 ```
 
 ---
@@ -282,17 +327,30 @@ To re-register slash commands through CI:
 
 ## 🎯 Discord Commands & Permissions Reference
 
-| Command | Description | Behavior & Protections |
-|---|---|---|
-| `/mc-status` | Report real-time server and workflow status | Performs direct TCP ping on port 25565, retrieving the active IP and direct connect workaround for DNS cache delays. Queries GitHub Actions API for active provisioning or teardown runs. |
-| `/mc-start` | Provision VM & start server | Pings TCP 25565 first; if already online, informs caller without booting duplicate VM. If offline, dispatches `server-start.yml`. |
-| `/mc-stop` | Gracefully save world & shut down VM | Checks if server is online; if running, dispatches `server-stop.yml` to save chunks, backup to S3/R2, and destroy the VM. |
+| Command | Channel Scope | Permission Tier | Description & Behavior |
+|---|---|---|---|
+| `/mc-status` | `#mc-commands` | Public / Open | Pings TCP `25565`, queries GitHub Actions for active start/stop runs, and reports direct IP + connect info. |
+| `/mc-start` | `#mc-commands` | Lifecycle (`ALLOWED_USER_IDS` if non-empty, else open) | Verifies server is offline and no workflow is running, then dispatches `server-start.yml`. |
+| `/mc-stop` | `#mc-commands` | Lifecycle (`ALLOWED_USER_IDS` if non-empty, else open) | Dispatches `server-stop.yml` to save world chunks, run off-site backup (if enabled), and destroy the VM. |
+| `/mc-players` | `#mc-commands` | Public / Open | Queries `mc-agent` via Workers VPC (`RCON list`) and displays online player count & names. |
+| `/mc-top` | `#mc-commands` | Public / Open | Displays host CPU load averages, RAM usage, world `/data` disk usage, uptime, and player count. |
+| `/mc-logs [lines]` | `#mc-commands` | Public / Open | Fetches the last `1–80` (default `40`) lines of `latest.log` with ANSI codes stripped and IPv4 addresses redacted. |
+| `/mc-say <message>` | `#mc-chat` | Public / Open | Broadcasts `[Discord] <user>: <message>` into in-game chat using JSON-escaped `tellraw`. |
+| `/mc-whitelist <add\|remove\|list>` | `#mc-commands` | **Admin Only (Fail-Closed)** | Validates Minecraft player names and manages the server whitelist live via RCON (`whitelist add/remove/list`). |
+| `/mc-backup` | `#mc-commands` | **Admin Only (Fail-Closed)** | Runs `save-all flush` via RCON to persist dirty chunks cleanly to the persistent block volume. |
+| `/mc-restart` | `#mc-commands` | **Admin Only (Fail-Closed)** | Issues `stop` via RCON so Docker cleanly shuts down the JVM and restarts the Minecraft container without destroying the VM. |
+| `/mc-cmd <command>` | `#mc-commands` | **Admin Only (Fail-Closed)** | Executes an arbitrary server console command via RCON (without leading slash). |
 
-### 🔒 Access Control (ACL)
+### 🔀 Channel Separation
 
-To prevent unauthorized users from starting or stopping the server:
+When `command_channel_id` and/or `chat_channel_id` are configured in `config/settings.yaml`:
+* `/mc-say` is restricted to `CHAT_CHANNEL_ID` (`#mc-chat`), alongside automated live player chat/join/leave webhooks.
+* All other commands (`/mc-start`, `/mc-stop`, `/mc-status`, `/mc-players`, `/mc-top`, `/mc-logs`, `/mc-whitelist`, `/mc-backup`, `/mc-restart`, `/mc-cmd`) are restricted to `COMMAND_CHANNEL_ID` (`#mc-commands`).
+* Running a command in the wrong channel returns an ephemeral notice telling the caller which channel to use.
 
-1. Obtain the Discord User ID of authorized players:
+### 🔒 Tiered Access Control (ACL)
+
+1. Obtain the Discord User ID of authorized admins/operators:
    - Enable **Developer Mode** in Discord (`User Settings → Advanced → Developer Mode`).
    - Right-click any user profile and select **Copy User ID**.
 2. Add the User IDs to `config/settings.yaml`:
@@ -303,9 +361,12 @@ To prevent unauthorized users from starting or stopping the server:
        - "123456789012345678"
        - "987654321098765432"
    ```
-3. When unauthorized users run operational commands, the bot responds with an ephemeral message visible only to them:
-   `⛔ You do not have permission to manage this Minecraft server.`
-4. If `allowed_user_ids` is left empty `[]`, all members in channels where the bot has command permissions may run the commands.
+3. **Authorization Behavior**:
+   - **Public Commands** (`/mc-status`, `/mc-players`, `/mc-top`, `/mc-logs`, `/mc-say`): Always allowed (respecting channel restrictions).
+   - **Lifecycle Commands** (`/mc-start`, `/mc-stop`): Restricted to `allowed_user_ids` when populated; open to channel members when `allowed_user_ids` is empty (`[]`).
+   - **Admin Commands** (`/mc-whitelist`, `/mc-backup`, `/mc-restart`, `/mc-cmd`): **Strictly fail closed** — if `allowed_user_ids` is empty (`[]`), **every caller is denied** until at least one admin Discord User ID is configured.
+4. Unauthorized callers receive an ephemeral rejection visible only to them:
+   `⛔ You do not have permission to execute this command.`
 
 ---
 

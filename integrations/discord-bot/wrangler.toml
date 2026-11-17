@@ -8,3 +8,10 @@ command = "worker-build --release"
 [observability.logs]
 enabled = true
 invocation_logs = true
+
+# Optional: Bind your Cloudflare Workers VPC Service pointing to mc-agent via cloudflared.
+# Uncomment and set your service_id from `npx wrangler vpc service create mc-agent ...`:
+# [[vpc_services]]
+# binding = "MC_AGENT"
+# service_id = "<YOUR_VPC_SERVICE_ID>"
+# remote = true

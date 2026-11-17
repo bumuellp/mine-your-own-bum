@@ -201,7 +201,18 @@ Hetzner integrates DNS management directly into the Hetzner Cloud Console under 
 > **Do not push `discord.enabled: true` yet!**
 > Keep `discord.enabled: false` in `config/settings.yaml` until you have finished all steps in the Discord bot guide and populated all Discord secrets in SOPS. Pushing `discord.enabled: true` prematurely will cause the deployment workflow to fail due to missing credentials.
 
-To control your server via Discord slash commands (`/mc-start`, `/mc-stop`, `/mc-status`):
+To control your server, inspect RCON/telemetry, and bridge in-game chat via Discord slash commands (`/mc-start`, `/mc-stop`, `/mc-status`, `/mc-players`, `/mc-top`, `/mc-whitelist`, `/mc-backup`, `/mc-restart`, `/mc-logs`, `/mc-cmd`, `/mc-say`):
 * Create a Discord Application in the [Discord Developer Portal](https://discord.com/developers/applications).
-* Generate a Worker-scoped API token in Cloudflare Workers.
-* Follow the dedicated, step-by-step [Discord Bot Setup Guide](../integrations/discord-bot/README.md).
+* Create Discord Webhook URLs for your `#mc-commands` and `#mc-chat` channels (for boot notifications and live chat bridging).
+* Generate a Cloudflare API token plus a Cloudflare Tunnel & Workers VPC service (100% free tier, no custom external domain required).
+* Follow the dedicated, step-by-step [Discord Bot & Sidecar Setup Guide](../integrations/discord-bot/README.md).
+
+---
+
+## 6. CurseForge API Key *(Optional — For CurseForge Mods)*
+
+If you add any CurseForge project slugs or IDs to `minecraft.curseforge_projects` in `config/settings.yaml`:
+1. Sign into the [CurseForge Developer Console](https://console.curseforge.com/).
+2. Navigate to **API Keys** and generate/copy your Eternal API Key (free).
+3. Add it to `config/secrets.enc.yaml` under `cf_api_key`.
+   *(Leave `cf_api_key: ""` empty when `minecraft.curseforge_projects` is `[]`.)*

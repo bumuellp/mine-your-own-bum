@@ -47,6 +47,12 @@ Run the slash command:
 /mc-stop
 ```
 
+### In-Game Management & Live Chat Bridge via Discord
+When the optional `mc-agent` + `cloudflared` sidecars and Workers VPC are configured (see [Discord Bot Guide](../integrations/discord-bot/README.md)):
+* **Automatic Boot Notification**: Once Minecraft passes RCON/startup checks, `mc-agent` posts a rich embed to `#mc-commands` (`discord_command_webhook_url`) with the active FQDN and direct IP.
+* **Live Chat Bridge**: `mc-agent` tails `latest.log` (loader-agnostic across Vanilla, Fabric, NeoForge, and Paper) and forwards player chat, join, and leave messages to `#mc-chat` (`discord_chat_webhook_url`). Discord users can reply back into in-game chat via `/mc-say`.
+* **RCON & Telemetry**: Run `/mc-players`, `/mc-top`, `/mc-logs`, `/mc-whitelist`, `/mc-backup`, `/mc-restart`, or `/mc-cmd` directly from Discord over the zero-trust Workers VPC tunnel.
+
 #### 🛡️ Graceful ACPI Teardown
 Both manual and automated stops issue an ACPI power signal to the Hetzner VM. Systemd intercepts the signal, sends SIGTERM to the Docker containers (allowing the Minecraft server to save chunks and cleanly disconnect players), unmounts the block volume, and shuts down cleanly before the VM is destroyed.
 
@@ -85,7 +91,7 @@ The server boots from a pre-cached Hetzner Cloud snapshot instead of downloading
 ### Baking a Golden Image
 1. Navigate to **Actions > Build Golden Machine Image > Run workflow**.
 2. A temporary ARM Ampere `cax11` builder VM is booted in Hetzner Cloud.
-3. Packer installs Docker, pulls required container images (`itzg/minecraft-server`, `itzg/mc-backup`), pre-configures console keyboard layouts, and saves a snapshot with label `role=minecraft-golden-image`.
+3. Packer installs Docker, pulls required container images (`itzg/minecraft-server`, `itzg/mc-backup`, `cloudflare/cloudflared`, `ghcr.io/bumuellp/mc-agent`), pre-configures console keyboard layouts, and saves a snapshot with label `role=minecraft-golden-image`.
 4. **Automated Snapshot Rotation**: The workflow automatically rotates snapshots, retaining only the latest golden image so you do not incur excess snapshot storage fees.
 
 ---

@@ -1,16 +1,23 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.99-alpine3.21 AS builder
-WORKDIR /build
-RUN apk add --no-cache musl-dev cmake
+FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.6.1 AS xx
 
-# 1. Dependency caching layer using dummy sources.
-# Passing --target separates host proc-macro compilation from static target linking.
+FROM --platform=$BUILDPLATFORM rust:1.99-alpine3.21 AS builder
+ARG TARGETPLATFORM
+COPY --from=xx / /
+RUN apk add --no-cache clang lld && \
+    xx-apk add --no-cache musl-dev gcc
+
+WORKDIR /build
+ENV XX_RUSTFLAGS="-C target-feature=+crt-static"
+
+# 1. Dependency caching layer using dummy sources (native host speed via xx, no QEMU).
 COPY Cargo.toml Cargo.lock ./
-RUN TARGET="$(rustc -vV | awk '/^host:/ {print $2}')" && \
+RUN xx-cargo --setup-target-triple && \
+    TARGET="$(xx-cargo --print-target-triple)" && \
     mkdir -p src && \
     echo "pub fn _dummy() {}" > src/lib.rs && \
     echo "fn main() {}" > src/main.rs && \
-    RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked --target "$TARGET" && \
+    xx-cargo build --release --locked && \
     rm -rf src \
       "target/$TARGET/release/.fingerprint/mc-agent-"* \
       "target/$TARGET/release/deps/mc_agent"* \
@@ -19,8 +26,8 @@ RUN TARGET="$(rustc -vV | awk '/^host:/ {print $2}')" && \
 
 # 2. Build actual mc-agent binary statically linked against musl
 COPY src ./src
-RUN TARGET="$(rustc -vV | awk '/^host:/ {print $2}')" && \
-    RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked --target "$TARGET" && \
+RUN TARGET="$(xx-cargo --print-target-triple)" && \
+    xx-cargo build --release --locked && \
     cp "target/$TARGET/release/mc-agent" /build/mc-agent
 
 FROM gcr.io/distroless/static-debian12:nonroot

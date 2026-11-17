@@ -95,19 +95,29 @@ openssl rand -base64 32
 | Secret Key | Required | Description |
 |---|:---:|---|
 | `hcloud_token` | **Yes** | Hetzner Cloud API token (Read & Write). See [Hetzner Setup](INFRASTRUCTURE_PROVIDERS.md#1-hetzner-cloud-required). |
-| `rcon_password` | **Yes** | Secure password chosen by you for RCON administration and idle watchdog communication. |
-| `console_password` | **Yes** | Secure password used, when logging in with the `root` user directly from hetzner cloud console. |
+| `rcon_password` | **Yes** | Secure password chosen by you for RCON administration and idle watchdog / `mc-agent` communication. |
+| `auth_password` | *Optional* | Password substituted into `${AUTH_PASSWORD}` in `minecraft.rcon_startup_commands` (for in-game auth mods). Set `""` or `"none"` if unused. |
+| `cf_api_key` | *Optional* | Free CurseForge API key from `https://console.curseforge.com/` (required when `minecraft.curseforge_projects` is non-empty). |
+| `console_password` | **Yes** | Secure password used when logging in with the `root` user directly from Hetzner Cloud console. |
 | `github_pat` | **Yes** | Scoped GitHub Fine-Grained Personal Access Token with repository `actions: write` scope. **Required** for the on-server idle watchdog daemon to trigger `server-stop.yml` when no players are online. *(Alternatively provide via GitHub Secret `PAT_WATCHDOG`)*. See [GitHub PAT Setup](INFRASTRUCTURE_PROVIDERS.md#3-github-personal-access-tokens-required). |
+| `dns_token` | *Optional* | deSEC API token, IONOS API key (`<public_prefix>.<secret>`), or Hetzner token. Required if `dns.enabled: true`. See [DNS Setup](INFRASTRUCTURE_PROVIDERS.md#4-dynamic-dns-provider-optional). |
 | `s3_bucket` | **Yes** | S3-compatible bucket name for OpenTofu remote state (e.g. Cloudflare R2 or Hetzner Object Storage). See [S3 Storage Setup](INFRASTRUCTURE_PROVIDERS.md#2-object-storage--s3-backend-required). |
 | `s3_endpoint` | **Yes** | S3 API endpoint URL (e.g. `https://<account_id>.r2.cloudflarestorage.com` or `https://fsn1.your-objectstorage.com`). |
 | `s3_access_key` | **Yes** | S3 API Access Key ID. |
 | `s3_secret_key` | **Yes** | S3 API Secret Access Key. |
 | `state_encryption_passphrase` | **Yes** | The generated OpenTofu state encryption passphrase (PBKDF2 + AES-GCM). |
-| `dns_token` | *Optional* | deSEC API token or IONOS API key (`<public_prefix>.<secret>`). Required if `dns.enabled: true`. See [DNS Setup](INFRASTRUCTURE_PROVIDERS.md#4-dynamic-dns-provider-optional). |
-| `cloudflare_api_token` | *Optional* | Cloudflare API token with `Workers:Edit` permissions. Required if Discord bot is enabled. See [Discord Bot Guide](../integrations/discord-bot/README.md). |
+| `backup_s3_bucket` | *Optional* | Dedicated S3/R2 bucket name for off-site world backups (required if `backup.enabled: true`). |
+| `backup_s3_endpoint` | *Optional* | S3 API endpoint URL for backup uploads (required if `backup.enabled: true`). |
+| `backup_s3_access_key` | *Optional* | S3 Access Key ID for backup bucket (required if `backup.enabled: true`). |
+| `backup_s3_secret_key` | *Optional* | S3 Secret Access Key for backup bucket (required if `backup.enabled: true`). |
+| `cloudflare_api_token` | *Optional* | Cloudflare API token with `Workers:Edit` permissions (plus Tunnel/VPC permissions if managing Workers VPC via Wrangler). Required if Discord bot is enabled. See [Discord Bot Guide](../integrations/discord-bot/README.md). |
 | `discord_public_key` | *Optional* | Discord Application Public Key (64 hex characters) for interaction verification. |
 | `discord_application_id` | *Optional* | Discord Application ID. |
 | `discord_bot_token` | *Optional* | Discord Bot Token for registering slash commands. |
+| `cloudflare_tunnel_token` | *Optional* | Cloudflare Tunnel connector token for the `cloudflared` sidecar. Required to enable `mc-agent` RCON, telemetry, log tailing, and live Discord chat bridging. |
+| `agent_shared_secret` | *Optional* | Shared bearer token (`openssl rand -hex 32`) authenticating Cloudflare Worker requests to `mc-agent`. |
+| `discord_chat_webhook_url` | *Optional* | Discord Webhook URL for live in-game chat and join/leave messages (`#mc-chat`). |
+| `discord_command_webhook_url` | *Optional* | Discord Webhook URL for rich "Server Online & Ready" boot embeds (`#mc-commands`). Falls back to `discord_chat_webhook_url` if unset. |
 
 4. Run pre-flight verification locally:
    ```bash
