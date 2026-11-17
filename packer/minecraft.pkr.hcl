@@ -40,6 +40,18 @@ variable "backup_image" {
   description = "Docker image tag for Minecraft backup (from settings.yaml)"
 }
 
+variable "mc_agent_image" {
+  type        = string
+  default     = ""
+  description = "Optional Docker image tag for mc-agent sidecar (from settings.yaml)"
+}
+
+variable "cloudflared_image" {
+  type        = string
+  default     = ""
+  description = "Optional Docker image tag for cloudflared tunnel sidecar (from settings.yaml)"
+}
+
 variable "keyboard_layout" {
   type        = string
   default     = "de"
@@ -74,6 +86,8 @@ build {
       "echo '==> Pre-caching Docker container images...'",
       "docker pull ${var.minecraft_image}",
       "docker pull ${var.backup_image}",
+      "if [ -n '${var.mc_agent_image}' ]; then docker pull '${var.mc_agent_image}'; fi",
+      "if [ -n '${var.cloudflared_image}' ]; then docker pull '${var.cloudflared_image}'; fi",
       "echo '==> Pre-configuring keyboard layout...'",
       "localectl set-keymap ${var.keyboard_layout} || loadkeys ${var.keyboard_layout} || true",
       "echo '==> Sanitizing instance state...'",

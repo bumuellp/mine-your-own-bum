@@ -57,9 +57,39 @@ locals {
   keyboard_layout  = local.settings.server.keyboard_layout
   console_password = data.sops_file.secrets[0].data["console_password"]
 
+  # Optional Cloudflare Workers VPC Tunnel & mc-agent sidecar secrets
+  cloudflare_tunnel_token = trimspace(try(coalesce(
+    var.cloudflare_tunnel_token,
+    try(data.sops_file.secrets[0].data["cloudflare_tunnel_token"], null)
+  ), ""))
+  agent_shared_secret = trimspace(try(coalesce(
+    var.agent_shared_secret,
+    try(data.sops_file.secrets[0].data["agent_shared_secret"], null)
+  ), ""))
+  discord_chat_webhook_url = trimspace(try(coalesce(
+    var.discord_chat_webhook_url,
+    try(data.sops_file.secrets[0].data["discord_chat_webhook_url"], null)
+  ), ""))
+  discord_command_webhook_url = trimspace(try(coalesce(
+    var.discord_command_webhook_url,
+    try(data.sops_file.secrets[0].data["discord_command_webhook_url"], null)
+  ), ""))
+
+  # DNS FQDN for boot readiness announcements
+  dns_enabled = try(local.settings.dns.enabled, false)
+  dns_domain  = try(local.settings.dns.domain, "")
+  dns_subname = try(local.settings.dns.subname, "")
+  server_fqdn = local.dns_enabled && local.dns_domain != "" ? (
+    local.dns_subname != "" && local.dns_subname != "@"
+    ? "${local.dns_subname}.${local.dns_domain}"
+    : local.dns_domain
+  ) : ""
+
   # Centralized container images
-  minecraft_image = local.settings.containers.minecraft_server
-  backup_image    = local.settings.containers.backup
+  minecraft_image   = local.settings.containers.minecraft_server
+  backup_image      = local.settings.containers.backup
+  mc_agent_image    = try(local.settings.containers.mc_agent, "ghcr.io/bumuellp/mc-agent:0.1.0")
+  cloudflared_image = try(local.settings.containers.cloudflared, "cloudflare/cloudflared:2026.3.0")
 }
 
 data "hcloud_server_type" "server" {
@@ -131,35 +161,43 @@ module "firewall" {
 # 3. Cloud-Init Manifest & Compose Orchestration
 locals {
   docker_compose = templatefile("${path.module}/templates/docker-compose.yml.tftpl", {
-    server_type            = local.settings.minecraft.server_type
-    minecraft_version      = local.settings.minecraft.version
-    jvm_memory             = local.settings.minecraft.jvm_memory
-    motd                   = local.settings.minecraft.motd
-    max_players            = local.settings.minecraft.max_players
-    difficulty             = local.settings.minecraft.difficulty
-    online_mode            = local.settings.minecraft.online_mode
-    enforce_secure_profile = local.settings.minecraft.enforce_secure_profile
-    whitelist_enabled      = local.settings.minecraft.whitelist_enabled
-    whitelist              = local.settings.minecraft.whitelist
-    ops                    = local.settings.minecraft.ops
-    rcon_password          = local.rcon_password
-    minecraft_image        = local.minecraft_image
-    backup_image           = local.backup_image
-    modrinth_modpack       = local.modrinth_modpack
-    modrinth_projects      = local.modrinth_projects
-    curseforge_projects    = local.curseforge_projects
-    cf_api_key             = local.cf_api_key
-    rcon_startup_commands  = local.rcon_startup_commands
-    plugins                = local.plugins
-    backup_enabled         = local.settings.backup.enabled
-    backup_interval        = local.settings.backup.interval
-    backup_initial_delay   = local.settings.backup.initial_delay
-    backup_retention_count = local.settings.backup.retention_count
-    backup_s3_bucket       = local.backup_s3_bucket
-    backup_s3_endpoint     = local.backup_s3_endpoint
-    backup_s3_provider     = local.backup_s3_provider
-    backup_s3_access_key   = local.backup_s3_access_key
-    backup_s3_secret_key   = local.backup_s3_secret_key
+    server_type                 = local.settings.minecraft.server_type
+    minecraft_version           = local.settings.minecraft.version
+    jvm_memory                  = local.settings.minecraft.jvm_memory
+    motd                        = local.settings.minecraft.motd
+    max_players                 = local.settings.minecraft.max_players
+    difficulty                  = local.settings.minecraft.difficulty
+    online_mode                 = local.settings.minecraft.online_mode
+    enforce_secure_profile      = local.settings.minecraft.enforce_secure_profile
+    whitelist_enabled           = local.settings.minecraft.whitelist_enabled
+    whitelist                   = local.settings.minecraft.whitelist
+    ops                         = local.settings.minecraft.ops
+    rcon_password               = local.rcon_password
+    minecraft_image             = local.minecraft_image
+    backup_image                = local.backup_image
+    mc_agent_image              = local.mc_agent_image
+    cloudflared_image           = local.cloudflared_image
+    cloudflare_tunnel_token     = local.cloudflare_tunnel_token
+    agent_shared_secret         = local.agent_shared_secret
+    discord_chat_webhook_url    = local.discord_chat_webhook_url
+    discord_command_webhook_url = local.discord_command_webhook_url
+    server_fqdn                 = local.server_fqdn
+    server_location             = local.settings.server.location
+    modrinth_modpack            = local.modrinth_modpack
+    modrinth_projects           = local.modrinth_projects
+    curseforge_projects         = local.curseforge_projects
+    cf_api_key                  = local.cf_api_key
+    rcon_startup_commands       = local.rcon_startup_commands
+    plugins                     = local.plugins
+    backup_enabled              = local.settings.backup.enabled
+    backup_interval             = local.settings.backup.interval
+    backup_initial_delay        = local.settings.backup.initial_delay
+    backup_retention_count      = local.settings.backup.retention_count
+    backup_s3_bucket            = local.backup_s3_bucket
+    backup_s3_endpoint          = local.backup_s3_endpoint
+    backup_s3_provider          = local.backup_s3_provider
+    backup_s3_access_key        = local.backup_s3_access_key
+    backup_s3_secret_key        = local.backup_s3_secret_key
   })
 
   cloud_init = templatefile("${path.module}/templates/cloud-init.yaml.tftpl", {

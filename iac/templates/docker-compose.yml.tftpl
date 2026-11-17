@@ -124,3 +124,49 @@ services:
       - /usr/local/bin/prune-rclone-backups.sh:/usr/local/bin/prune-rclone-backups.sh:ro
 %{ endif ~}
 %{ endif ~}
+%{ if cloudflare_tunnel_token != "" || discord_chat_webhook_url != "" || discord_command_webhook_url != "" ~}
+  mc-agent:
+    image: ${mc_agent_image}
+    container_name: mc-agent
+    restart: unless-stopped
+    stop_grace_period: 15s
+    mem_limit: 64m
+    depends_on:
+      mc-server:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - path: /opt/minecraft/agent.env
+        required: false
+    environment:
+      LISTEN_ADDR: "0.0.0.0:8080"
+      RCON_HOST: "mc-server"
+      RCON_PORT: "25575"
+      RCON_PASSWORD: ${replace(jsonencode(rcon_password), "$", "$$")}
+      AGENT_SHARED_SECRET: ${replace(jsonencode(agent_shared_secret), "$", "$$")}
+      DISCORD_CHAT_WEBHOOK_URL: ${replace(jsonencode(discord_chat_webhook_url), "$", "$$")}
+      DISCORD_COMMAND_WEBHOOK_URL: ${replace(jsonencode(discord_command_webhook_url), "$", "$$")}
+      SERVER_FQDN: ${replace(jsonencode(server_fqdn), "$", "$$")}
+      SERVER_LOCATION: ${replace(jsonencode(server_location), "$", "$$")}
+    volumes:
+      - /mnt/mc-data/logs:/logs:ro
+      - /mnt/mc-data:/data:ro
+      - /proc:/host/proc:ro
+%{ endif ~}
+%{ if cloudflare_tunnel_token != "" ~}
+  cloudflared:
+    image: ${cloudflared_image}
+    container_name: cloudflared
+    restart: unless-stopped
+    stop_grace_period: 15s
+    mem_limit: 128m
+    depends_on:
+      mc-agent:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${replace(jsonencode(cloudflare_tunnel_token), "$", "$$")}
+%{ endif ~}

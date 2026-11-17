@@ -44,6 +44,8 @@ jobs:
             server.keyboard_layout
             containers.minecraft_server
             containers.backup
+            containers.mc_agent
+            containers.cloudflared
             packer.arm_builder
             packer.x86_builder
             packer.fallback_locations
@@ -85,6 +87,8 @@ jobs:
           PKR_VAR_keyboard_layout: ${{ fromJSON(steps.cfg.outputs.json)['server.keyboard_layout'] || 'de' }}
           PKR_VAR_minecraft_image: ${{ fromJSON(steps.cfg.outputs.json)['containers.minecraft_server'] }}
           PKR_VAR_backup_image: ${{ fromJSON(steps.cfg.outputs.json)['containers.backup'] }}
+          PKR_VAR_mc_agent_image: ${{ fromJSON(steps.cfg.outputs.json)['containers.mc_agent'] || '' }}
+          PKR_VAR_cloudflared_image: ${{ fromJSON(steps.cfg.outputs.json)['containers.cloudflared'] || '' }}
         run: |
           packer build -color=false packer/minecraft.pkr.hcl
 

@@ -26,6 +26,34 @@ variable "cf_api_key" {
   default     = null
 }
 
+variable "cloudflare_tunnel_token" {
+  description = "Cloudflare Tunnel connector token for private Workers VPC access to mc-agent"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "agent_shared_secret" {
+  description = "Shared secret authenticating Discord Worker requests to mc-agent (X-Agent-Secret)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "discord_chat_webhook_url" {
+  description = "Discord webhook URL for live in-game chat and join/leave bridging (#mc-chat)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "discord_command_webhook_url" {
+  description = "Optional Discord webhook URL for boot ready announcements (#mc-commands)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 variable "github_pat" {
   description = "Scoped Personal Access Token for triggering GitHub Actions stop workflow from VM watchdog"
   type        = string

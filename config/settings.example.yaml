@@ -61,6 +61,8 @@ backup:
 containers:
   minecraft_server: "itzg/minecraft-server:2026.10.0"  # renovate: datasource=docker depName=itzg/minecraft-server
   backup: "itzg/mc-backup:2026.10.1"                  # renovate: datasource=docker depName=itzg/mc-backup
+  cloudflared: "cloudflare/cloudflared:2026.3.0"      # renovate: datasource=docker depName=cloudflare/cloudflared
+  mc_agent: "ghcr.io/bumuellp/mc-agent:0.1.0"         # renovate: datasource=docker depName=ghcr.io/bumuellp/mc-agent
 
 packer:
   arm_builder: "cax11"  # Model used to build ARM golden image snapshot
@@ -72,7 +74,10 @@ packer:
 
 discord:
   enabled: false
-  # Optional: Restrict /mc-start, /mc-stop to specific Discord user IDs.
+  # Optional: Separate #mc-commands (operational commands) from #mc-chat (/mc-say & live chat)
+  command_channel_id: ""
+  chat_channel_id: ""
+  # Optional: Restrict /mc-start, /mc-stop, and admin commands to specific Discord user IDs.
   # Leave empty ([]) to allow all members with slash command access in your guild.
   allowed_user_ids: []
   # - "123456789012345678"
