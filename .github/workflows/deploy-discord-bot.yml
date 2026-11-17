@@ -34,40 +34,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Rust Toolchain
-        uses: bumuellp/lights-camera-bum-action/setup-rust@9efbf997d01a8245594e85d5b67713f444b265e9
+      - name: Setup, Lint & Test Rust Crate
+        uses: bumuellp/lights-camera-bum-action/setup-rust@804d7c536c5de1bbf5d39e860638ea606172d39e # v1.12.0
         with:
           components: clippy, rustfmt
           workspaces: integrations/discord-bot
-
-      - name: Check Rust Formatting (cargo fmt --check)
-        run: cargo fmt --manifest-path integrations/discord-bot/Cargo.toml --check
-
-      - name: Lint Rust Crate (cargo clippy)
-        run: cargo clippy --manifest-path integrations/discord-bot/Cargo.toml --all-targets -- -D warnings
+          run-fmt: "true"
+          run-clippy: "true"
+          run-test: "true"
 
   deploy-worker:
     name: Deploy Cloudflare Worker
     needs: lint
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: |
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+        github.repository != 'bumuellp/mine-your-own-bum'
     runs-on: ubuntu-latest
     env:
       CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Rust Toolchain
-        uses: bumuellp/lights-camera-bum-action/setup-rust@9efbf997d01a8245594e85d5b67713f444b265e9
+        uses: bumuellp/lights-camera-bum-action/setup-rust@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           install-worker-build: true
           workspaces: integrations/discord-bot
 
       - name: Parse Settings
         id: cfg
-        uses: bumuellp/lights-camera-bum-action/parse-config@9efbf997d01a8245594e85d5b67713f444b265e9
+        uses: bumuellp/lights-camera-bum-action/parse-config@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           file: config/settings.yaml
           fallback-file: config/settings.example.yaml
@@ -76,10 +75,11 @@ jobs:
             discord.allowed_user_ids
             dns.subname
             dns.domain
+            server.location
 
       - name: Decrypt Secrets (SOPS)
         id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@9efbf997d01a8245594e85d5b67713f444b265e9
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
@@ -104,7 +104,7 @@ jobs:
           (env.CF_API_TOKEN != '' ||
            (fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != '' &&
             fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != null))
-        uses: bumuellp/lights-camera-bum-action/deploy-worker@9efbf997d01a8245594e85d5b67713f444b265e9
+        uses: bumuellp/lights-camera-bum-action/deploy-worker@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           api-token: ${{ env.CF_API_TOKEN || fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] }}
           working-directory: integrations/discord-bot
@@ -112,6 +112,7 @@ jobs:
             GITHUB_OWNER
             GITHUB_REPO
             SERVER_FQDN
+            SERVER_LOCATION
           secrets: |
             DISCORD_PUBLIC_KEY
             DISCORD_APPLICATION_ID
@@ -128,24 +129,26 @@ jobs:
           DISCORD_APPLICATION_ID: ${{ secrets.DISCORD_APPLICATION_ID || fromJSON(steps.sec.outputs.json)['discord_application_id'] }}
           GITHUB_PAT: ${{ secrets.PAT_WATCHDOG || fromJSON(steps.sec.outputs.json)['github_pat'] }}
           ALLOWED_USER_IDS: ${{ fromJSON(steps.cfg.outputs.json)['discord.allowed_user_ids'] || '' }}
+          SERVER_LOCATION: ${{ fromJSON(steps.cfg.outputs.json)['server.location'] || 'fsn1' }}
 
   sync-slash-commands:
     name: Sync Discord Slash Commands
     needs: deploy-worker
     if: |
-      (github.event_name == 'workflow_dispatch' && inputs.sync_commands == true) ||
+      ((github.event_name == 'workflow_dispatch' && inputs.sync_commands == true) ||
       (github.event_name == 'push' &&
-       contains(toJSON(github.event.commits), 'integrations/discord-bot/scripts/register-commands.sh'))
+       contains(toJSON(github.event.commits), 'integrations/discord-bot/scripts/register-commands.sh'))) &&
+        github.repository != 'bumuellp/mine-your-own-bum'
     runs-on: ubuntu-latest
     env:
       DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Decrypt Discord Bot Secrets (SOPS)
         id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@9efbf997d01a8245594e85d5b67713f444b265e9
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml

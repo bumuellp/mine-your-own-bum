@@ -1,0 +1,65 @@
+---
+name: Build & Publish mc-agent
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - "integrations/mc-agent/**"
+      - ".github/workflows/build-mc-agent.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "integrations/mc-agent/**"
+      - ".github/workflows/build-mc-agent.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-mc-agent-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Rust Lint & Unit Tests (mc-agent)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup, Lint & Test Rust Crate
+        uses: bumuellp/lights-camera-bum-action/setup-rust@804d7c536c5de1bbf5d39e860638ea606172d39e # v1.12.0
+        with:
+          components: clippy, rustfmt
+          workspaces: integrations/mc-agent
+          run-fmt: "true"
+          run-clippy: "true"
+          run-test: "true"
+
+  publish-ghcr:
+    name: Build & Push Multi-Arch GHCR Image
+    needs: lint-and-test
+    if: |
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.repository == 'bumuellp/mine-your-own-bum'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and Push ghcr.io/bumuellp/mc-agent
+        uses: bumuellp/lights-camera-bum-action/build-ghcr-image@804d7c536c5de1bbf5d39e860638ea606172d39e # v1.12.0
+        with:
+          context: integrations/mc-agent
+          dockerfile: integrations/mc-agent/Dockerfile
+          image-name: mc-agent
+          repository-owner: ${{ github.repository_owner }}
+          sha: ${{ github.sha }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          platforms: linux/amd64,linux/arm64
+          extra-tags: 0.1.0
