@@ -1,6 +1,9 @@
 //! Pure markdown message formatters for Discord slash command responses
 
+use crate::agent::{AgentError, AgentPlayers, AgentSystem};
 use crate::types::ActiveWorkflow;
+
+const DISCORD_SAFE_MSG_LIMIT: usize = 1900;
 
 /// Format real-time server status response markdown for `/mc-status`
 pub fn format_status_message(
@@ -74,6 +77,118 @@ pub fn format_blocked_action(active: ActiveWorkflow, requested_start: bool) -> S
         (ActiveWorkflow::Stop, false) => "A server shutdown is already in progress.",
     };
     format!("⚠️ **Action blocked:** {desc}")
+}
+
+/// Format `/mc-players` output.
+pub fn format_players_message(resp: &AgentPlayers) -> String {
+    if resp.online == 0 || resp.players.is_empty() {
+        format!(
+            "👥 **Players Online:** `0 / {}`\n*No players are currently connected.*",
+            resp.max
+        )
+    } else {
+        let list = resp
+            .players
+            .iter()
+            .map(|p| format!("• `{p}`"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "👥 **Players Online:** `{} / {}`\n{list}",
+            resp.online, resp.max
+        )
+    }
+}
+
+/// Format `/mc-top` host telemetry and player summary.
+pub fn format_system_message(stats: &AgentSystem) -> String {
+    let hours = stats.uptime_seconds / 3600;
+    let mins = (stats.uptime_seconds % 3600) / 60;
+    let player_summary = if stats.players.is_empty() {
+        "none".to_string()
+    } else {
+        stats.players.join(", ")
+    };
+
+    format!(
+        "📊 **Server Telemetry (`/mc-top`)**\n\
+         • **CPU Load (1m / 5m / 15m):** `{:.2} / {:.2} / {:.2}`\n\
+         • **Host RAM:** `{} MB / {} MB`\n\
+         • **World Volume (`/mnt/mc-data`):** `{:.2} GB / {:.2} GB`\n\
+         • **Host Uptime:** `{}h {}m`\n\
+         • **Players (`{}/{}`):** `{}`",
+        stats.load_1m,
+        stats.load_5m,
+        stats.load_15m,
+        stats.mem_used_mb,
+        stats.mem_total_mb,
+        stats.disk_used_gb,
+        stats.disk_total_gb,
+        hours,
+        mins,
+        stats.online_players,
+        stats.max_players,
+        player_summary
+    )
+}
+
+/// Truncates `text` to the trailing `max_chars` characters if it exceeds Discord's message limit.
+fn tail_chars(text: &str, max_chars: usize) -> String {
+    let count = text.chars().count();
+    if count <= max_chars {
+        text.to_string()
+    } else {
+        let skip = count - max_chars;
+        format!(
+            "…(truncated)\n{}",
+            text.chars().skip(skip).collect::<String>()
+        )
+    }
+}
+
+/// Format `/mc-logs` output safely within Discord's 2000-character message limit.
+pub fn format_logs_message(lines: &str) -> String {
+    let trimmed = lines.trim();
+    if trimmed.is_empty() {
+        return "📜 **Server Logs:** *(no log lines available)*".to_string();
+    }
+    let body = tail_chars(trimmed, DISCORD_SAFE_MSG_LIMIT - 64);
+    format!("📜 **Latest Server Logs:**\n```log\n{body}\n```")
+}
+
+/// Format RCON command or whitelist output safely within Discord's 2000-character message limit.
+pub fn format_rcon_output(title: &str, output: &str) -> String {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        format!("{title}\n*(no output)*")
+    } else {
+        let body = tail_chars(trimmed, DISCORD_SAFE_MSG_LIMIT - 80);
+        format!("{title}\n```\n{body}\n```")
+    }
+}
+
+/// Format an `AgentError` into a user-friendly Discord response.
+pub fn format_agent_error(err: &AgentError, command_channel_id: &str) -> String {
+    match err {
+        AgentError::NotConfigured => {
+            "⚠️ **Sidecar agent not configured.** Ensure the `MC_AGENT` Workers VPC binding and `AGENT_SHARED_SECRET` are deployed.".to_string()
+        }
+        AgentError::Offline => {
+            let start_hint = if command_channel_id.trim().is_empty() {
+                "Run `/mc-start` to boot it.".to_string()
+            } else {
+                format!("Run `/mc-start` in <#{command_channel_id}> to boot it.")
+            };
+            format!("⚫ **Server is currently offline.** {start_hint}")
+        }
+        AgentError::Unauthorized => {
+            "🔒 **Agent authentication failed:** `AGENT_SHARED_SECRET` does not match `mc-agent`.".to_string()
+        }
+        AgentError::BadRequest(msg) => format!("⚠️ **Invalid request:** {msg}"),
+        AgentError::HttpError(code, msg) => {
+            format!("❌ **Agent error (HTTP {code}):** {}", tail_chars(msg, 300))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -154,5 +269,41 @@ mod tests {
 
         let msg_stop_during_stop = format_blocked_action(ActiveWorkflow::Stop, false);
         assert!(msg_stop_during_stop.contains("shutdown"));
+    }
+
+    #[test]
+    fn test_format_players_and_system_and_logs() {
+        let players_msg = format_players_message(&AgentPlayers {
+            online: 2,
+            max: 20,
+            players: vec!["Steve".to_string(), ".BedrockAlex".to_string()],
+        });
+        assert!(players_msg.contains("2 / 20"));
+        assert!(players_msg.contains("`Steve`"));
+
+        let sys_msg = format_system_message(&AgentSystem {
+            load_1m: 0.45,
+            load_5m: 0.30,
+            load_15m: 0.25,
+            mem_used_mb: 5120,
+            mem_total_mb: 8192,
+            disk_used_gb: 4.5,
+            disk_total_gb: 15.0,
+            uptime_seconds: 3720,
+            online_players: 1,
+            max_players: 20,
+            players: vec!["Steve".to_string()],
+        });
+        assert!(sys_msg.contains("0.45 / 0.30 / 0.25"));
+        assert!(sys_msg.contains("5120 MB / 8192 MB"));
+        assert!(sys_msg.contains("1h 2m"));
+
+        let long_logs = "x".repeat(3000);
+        let logs_msg = format_logs_message(&long_logs);
+        assert!(logs_msg.len() <= 2000);
+        assert!(logs_msg.contains("…(truncated)"));
+
+        let offline_msg = format_agent_error(&AgentError::Offline, "123456");
+        assert!(offline_msg.contains("<#123456>"));
     }
 }

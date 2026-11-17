@@ -73,6 +73,8 @@ jobs:
           keys: |
             discord.enabled
             discord.allowed_user_ids
+            discord.command_channel_id
+            discord.chat_channel_id
             dns.subname
             dns.domain
             server.location
@@ -88,6 +90,7 @@ jobs:
             discord_public_key
             discord_application_id
             github_pat
+            agent_shared_secret
 
       - name: Skip Notice
         if: |
@@ -113,11 +116,14 @@ jobs:
             GITHUB_REPO
             SERVER_FQDN
             SERVER_LOCATION
+            COMMAND_CHANNEL_ID
+            CHAT_CHANNEL_ID
           secrets: |
             DISCORD_PUBLIC_KEY
             DISCORD_APPLICATION_ID
             GITHUB_PAT
             ALLOWED_USER_IDS
+            AGENT_SHARED_SECRET
         env:
           GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO: ${{ github.event.repository.name }}
@@ -130,6 +136,9 @@ jobs:
           GITHUB_PAT: ${{ secrets.PAT_WATCHDOG || fromJSON(steps.sec.outputs.json)['github_pat'] }}
           ALLOWED_USER_IDS: ${{ fromJSON(steps.cfg.outputs.json)['discord.allowed_user_ids'] || '' }}
           SERVER_LOCATION: ${{ fromJSON(steps.cfg.outputs.json)['server.location'] || 'fsn1' }}
+          COMMAND_CHANNEL_ID: ${{ fromJSON(steps.cfg.outputs.json)['discord.command_channel_id'] || '' }}
+          CHAT_CHANNEL_ID: ${{ fromJSON(steps.cfg.outputs.json)['discord.chat_channel_id'] || '' }}
+          AGENT_SHARED_SECRET: ${{ secrets.AGENT_SHARED_SECRET || fromJSON(steps.sec.outputs.json)['agent_shared_secret'] || '' }}
 
   sync-slash-commands:
     name: Sync Discord Slash Commands

@@ -1,12 +1,21 @@
-//! Discord slash command handlers for Minecraft server control
+//! Discord slash command handlers for Minecraft server control and sidecar agent operations.
 
 use super::client::update_deferred_response;
-use super::format::{format_already_running_message, format_blocked_action, format_status_message};
+use super::format::{
+    format_agent_error, format_already_running_message, format_blocked_action, format_logs_message,
+    format_players_message, format_rcon_output, format_status_message, format_system_message,
+};
+use super::models::{CommandData, option_str_from};
+use crate::agent::{
+    AgentError, AgentPlayers, AgentSystem, fetch_logs, fetch_players, fetch_system, post_backup,
+    post_rcon, post_restart, post_say, post_whitelist,
+};
 use crate::github::{dispatch_workflow, get_active_workflow};
 use crate::minecraft::{clean_ip, ping_minecraft_server, resolve_ip_doh};
 use crate::types::{ActiveWorkflow, PingResult};
+use worker::Fetcher;
 
-/// Execution context passed to slash command handlers
+/// Execution context passed to slash command handlers.
 #[derive(Clone, Debug)]
 pub struct CommandContext {
     pub owner: String,
@@ -16,6 +25,9 @@ pub struct CommandContext {
     pub app_id: String,
     pub token: String,
     pub server_location: String,
+    pub command_channel_id: String,
+    pub caller_name: String,
+    pub command_data: Option<CommandData>,
 }
 
 #[allow(async_fn_in_trait)]
@@ -30,10 +42,25 @@ trait CommandBackend {
         pat: &str,
         workflow_filename: &str,
     ) -> Result<(), String>;
+    async fn agent_players(&self) -> Result<AgentPlayers, AgentError>;
+    async fn agent_system(&self) -> Result<AgentSystem, AgentError>;
+    async fn agent_logs(&self, lines: u32) -> Result<String, AgentError>;
+    async fn agent_say(&self, sender: &str, message: &str) -> Result<(), AgentError>;
+    async fn agent_whitelist(
+        &self,
+        action: &str,
+        player: Option<&str>,
+    ) -> Result<String, AgentError>;
+    async fn agent_backup(&self) -> Result<String, AgentError>;
+    async fn agent_restart(&self) -> Result<String, AgentError>;
+    async fn agent_rcon(&self, command: &str) -> Result<String, AgentError>;
     async fn respond(&self, app_id: &str, token: &str, content: &str);
 }
 
-struct RealBackend;
+struct RealBackend {
+    fetcher: Option<Fetcher>,
+    agent_secret: String,
+}
 
 impl CommandBackend for RealBackend {
     async fn ping(&self, fqdn: &str, port: u16) -> PingResult {
@@ -58,14 +85,59 @@ impl CommandBackend for RealBackend {
         dispatch_workflow(owner, repo, pat, workflow_filename).await
     }
 
+    async fn agent_players(&self) -> Result<AgentPlayers, AgentError> {
+        fetch_players(self.fetcher.as_ref(), &self.agent_secret).await
+    }
+
+    async fn agent_system(&self) -> Result<AgentSystem, AgentError> {
+        fetch_system(self.fetcher.as_ref(), &self.agent_secret).await
+    }
+
+    async fn agent_logs(&self, lines: u32) -> Result<String, AgentError> {
+        fetch_logs(self.fetcher.as_ref(), &self.agent_secret, lines).await
+    }
+
+    async fn agent_say(&self, sender: &str, message: &str) -> Result<(), AgentError> {
+        post_say(self.fetcher.as_ref(), &self.agent_secret, sender, message).await
+    }
+
+    async fn agent_whitelist(
+        &self,
+        action: &str,
+        player: Option<&str>,
+    ) -> Result<String, AgentError> {
+        post_whitelist(self.fetcher.as_ref(), &self.agent_secret, action, player).await
+    }
+
+    async fn agent_backup(&self) -> Result<String, AgentError> {
+        post_backup(self.fetcher.as_ref(), &self.agent_secret).await
+    }
+
+    async fn agent_restart(&self) -> Result<String, AgentError> {
+        post_restart(self.fetcher.as_ref(), &self.agent_secret).await
+    }
+
+    async fn agent_rcon(&self, command: &str) -> Result<String, AgentError> {
+        post_rcon(self.fetcher.as_ref(), &self.agent_secret, command).await
+    }
+
     async fn respond(&self, app_id: &str, token: &str, content: &str) {
         update_deferred_response(app_id, token, content).await;
     }
 }
 
-/// Route and execute the requested slash command
-pub async fn execute_command(command: &str, ctx: &CommandContext) {
-    execute_command_with(command, ctx, &RealBackend).await;
+/// Route and execute the requested slash command using the Cloudflare Workers VPC binding.
+pub async fn execute_command(
+    command: &str,
+    ctx: &CommandContext,
+    fetcher: Option<Fetcher>,
+    agent_secret: String,
+) {
+    let backend = RealBackend {
+        fetcher,
+        agent_secret,
+    };
+    execute_command_with(command, ctx, &backend).await;
 }
 
 async fn execute_command_with<B: CommandBackend>(command: &str, ctx: &CommandContext, backend: &B) {
@@ -73,6 +145,14 @@ async fn execute_command_with<B: CommandBackend>(command: &str, ctx: &CommandCon
         "mc-status" => handle_status_with(ctx, backend).await,
         "mc-start" => handle_start_with(ctx, backend).await,
         "mc-stop" => handle_stop_with(ctx, backend).await,
+        "mc-players" => handle_players_with(ctx, backend).await,
+        "mc-top" => handle_top_with(ctx, backend).await,
+        "mc-logs" => handle_logs_with(ctx, backend).await,
+        "mc-say" => handle_say_with(ctx, backend).await,
+        "mc-whitelist" => handle_whitelist_with(ctx, backend).await,
+        "mc-backup" => handle_backup_with(ctx, backend).await,
+        "mc-restart" => handle_restart_with(ctx, backend).await,
+        "mc-cmd" => handle_cmd_with(ctx, backend).await,
         _ => {}
     }
 }
@@ -90,11 +170,6 @@ async fn resolve_direct_ip<B: CommandBackend>(
         None => backend.resolve_doh(fqdn).await,
     }
     .filter(|ip| ip != fqdn)
-}
-
-/// Handle `/mc-status`: ping TCP port 25565 and check ongoing GitHub Actions workflows
-pub async fn handle_status(ctx: &CommandContext) {
-    handle_status_with(ctx, &RealBackend).await;
 }
 
 async fn handle_status_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
@@ -116,13 +191,7 @@ async fn handle_status_with<B: CommandBackend>(ctx: &CommandContext, backend: &B
     backend.respond(&ctx.app_id, &ctx.token, &msg).await;
 }
 
-/// Handle `/mc-start`: verify no active conflict, check if already online, dispatch workflow
-pub async fn handle_start(ctx: &CommandContext) {
-    handle_start_with(ctx, &RealBackend).await;
-}
-
 async fn handle_start_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
-    // Guard 1: Concurrency check on active workflow
     if let Some(active) = backend
         .active_workflow(&ctx.owner, &ctx.repo, &ctx.pat)
         .await
@@ -132,7 +201,6 @@ async fn handle_start_with<B: CommandBackend>(ctx: &CommandContext, backend: &B)
         return;
     }
 
-    // Guard 2: Direct FQDN TCP ping to check if already online
     let ping_result = backend.ping(&ctx.fqdn, 25565).await;
     if ping_result.is_online {
         let direct_ip = resolve_direct_ip(&ping_result, &ctx.fqdn, backend).await;
@@ -171,13 +239,7 @@ async fn handle_start_with<B: CommandBackend>(ctx: &CommandContext, backend: &B)
     }
 }
 
-/// Handle `/mc-stop`: verify no conflicting start workflow, dispatch graceful shutdown workflow
-pub async fn handle_stop(ctx: &CommandContext) {
-    handle_stop_with(ctx, &RealBackend).await;
-}
-
 async fn handle_stop_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
-    // Guard: Concurrency check on active workflow
     let (active, ping_result) = futures_util::future::join(
         backend.active_workflow(&ctx.owner, &ctx.repo, &ctx.pat),
         backend.ping(&ctx.fqdn, 25565),
@@ -215,9 +277,129 @@ async fn handle_stop_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) 
     }
 }
 
+async fn handle_players_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
+    let msg = match backend.agent_players().await {
+        Ok(players) => format_players_message(&players),
+        Err(e) => format_agent_error(&e, &ctx.command_channel_id),
+    };
+    backend.respond(&ctx.app_id, &ctx.token, &msg).await;
+}
+
+async fn handle_top_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
+    let msg = match backend.agent_system().await {
+        Ok(sys) => format_system_message(&sys),
+        Err(e) => format_agent_error(&e, &ctx.command_channel_id),
+    };
+    backend.respond(&ctx.app_id, &ctx.token, &msg).await;
+}
+
+async fn handle_logs_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
+    let lines = ctx
+        .command_data
+        .as_ref()
+        .and_then(|d| d.option_i64("lines"))
+        .map(|n| n.clamp(1, 80) as u32)
+        .unwrap_or(40);
+
+    let msg = match backend.agent_logs(lines).await {
+        Ok(logs) => format_logs_message(&logs),
+        Err(e) => format_agent_error(&e, &ctx.command_channel_id),
+    };
+    backend.respond(&ctx.app_id, &ctx.token, &msg).await;
+}
+
+async fn handle_say_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
+    let raw_msg = ctx
+        .command_data
+        .as_ref()
+        .and_then(|d| d.option_str("message"))
+        .map(str::trim)
+        .unwrap_or_default();
+
+    if raw_msg.is_empty() {
+        backend
+            .respond(
+                &ctx.app_id,
+                &ctx.token,
+                "⚠️ Please provide a non-empty message.",
+            )
+            .await;
+        return;
+    }
+
+    let msg = match backend.agent_say(&ctx.caller_name, raw_msg).await {
+        Ok(()) => format!("💬 **{}:** {}", ctx.caller_name, raw_msg),
+        Err(e) => format_agent_error(&e, &ctx.command_channel_id),
+    };
+    backend.respond(&ctx.app_id, &ctx.token, &msg).await;
+}
+
+async fn handle_whitelist_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
+    let Some((action, opts)) = ctx.command_data.as_ref().and_then(|d| d.subcommand()) else {
+        backend
+            .respond(
+                &ctx.app_id,
+                &ctx.token,
+                "⚠️ Usage: `/mc-whitelist <add|remove|list>`",
+            )
+            .await;
+        return;
+    };
+
+    let player = option_str_from(opts, "player");
+    let msg = match backend.agent_whitelist(action, player).await {
+        Ok(out) => format_rcon_output(&format!("📋 **Whitelist (`{action}`):**"), &out),
+        Err(e) => format_agent_error(&e, &ctx.command_channel_id),
+    };
+    backend.respond(&ctx.app_id, &ctx.token, &msg).await;
+}
+
+async fn handle_backup_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
+    let msg = match backend.agent_backup().await {
+        Ok(out) => format_rcon_output("💾 **World Save / Flush:**", &out),
+        Err(e) => format_agent_error(&e, &ctx.command_channel_id),
+    };
+    backend.respond(&ctx.app_id, &ctx.token, &msg).await;
+}
+
+async fn handle_restart_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
+    let msg = match backend.agent_restart().await {
+        Ok(out) => format_rcon_output("🔄 **Minecraft JVM Restart:**", &out),
+        Err(e) => format_agent_error(&e, &ctx.command_channel_id),
+    };
+    backend.respond(&ctx.app_id, &ctx.token, &msg).await;
+}
+
+async fn handle_cmd_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
+    let cmd = ctx
+        .command_data
+        .as_ref()
+        .and_then(|d| d.option_str("command"))
+        .map(str::trim)
+        .unwrap_or_default();
+
+    if cmd.is_empty() {
+        backend
+            .respond(
+                &ctx.app_id,
+                &ctx.token,
+                "⚠️ Please provide a command to execute.",
+            )
+            .await;
+        return;
+    }
+
+    let msg = match backend.agent_rcon(cmd).await {
+        Ok(out) => format_rcon_output(&format!("⌨️ **RCON (`{cmd}`):**"), &out),
+        Err(e) => format_agent_error(&e, &ctx.command_channel_id),
+    };
+    backend.respond(&ctx.app_id, &ctx.token, &msg).await;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::discord::models::CommandOption;
     use std::cell::RefCell;
 
     struct MockBackend {
@@ -225,7 +407,17 @@ mod tests {
         doh_ip: Option<String>,
         active_workflow: Option<ActiveWorkflow>,
         dispatch_result: Result<(), String>,
+        players_result: Result<AgentPlayers, AgentError>,
+        system_result: Result<AgentSystem, AgentError>,
+        logs_result: Result<String, AgentError>,
+        say_result: Result<(), AgentError>,
+        whitelist_result: Result<String, AgentError>,
+        backup_result: Result<String, AgentError>,
+        restart_result: Result<String, AgentError>,
+        rcon_result: Result<String, AgentError>,
         dispatched_workflows: RefCell<Vec<String>>,
+        say_calls: RefCell<Vec<(String, String)>>,
+        rcon_calls: RefCell<Vec<String>>,
         responses: RefCell<Vec<String>>,
     }
 
@@ -239,7 +431,33 @@ mod tests {
                 doh_ip: None,
                 active_workflow: None,
                 dispatch_result: Ok(()),
+                players_result: Ok(AgentPlayers {
+                    online: 1,
+                    max: 20,
+                    players: vec!["Steve".to_string()],
+                }),
+                system_result: Ok(AgentSystem {
+                    load_1m: 0.25,
+                    load_5m: 0.20,
+                    load_15m: 0.15,
+                    mem_used_mb: 4000,
+                    mem_total_mb: 8000,
+                    disk_used_gb: 3.2,
+                    disk_total_gb: 15.0,
+                    uptime_seconds: 1200,
+                    online_players: 1,
+                    max_players: 20,
+                    players: vec!["Steve".to_string()],
+                }),
+                logs_result: Ok("[12:00:00] [Server thread/INFO]: Done!".to_string()),
+                say_result: Ok(()),
+                whitelist_result: Ok("Added Steve to the whitelist".to_string()),
+                backup_result: Ok("Saved the game".to_string()),
+                restart_result: Ok("Stopping the server".to_string()),
+                rcon_result: Ok("There are 1 of a max of 20 players online: Steve".to_string()),
                 dispatched_workflows: RefCell::new(Vec::new()),
+                say_calls: RefCell::new(Vec::new()),
+                rcon_calls: RefCell::new(Vec::new()),
                 responses: RefCell::new(Vec::new()),
             }
         }
@@ -276,6 +494,46 @@ mod tests {
             self.dispatch_result.clone()
         }
 
+        async fn agent_players(&self) -> Result<AgentPlayers, AgentError> {
+            self.players_result.clone()
+        }
+
+        async fn agent_system(&self) -> Result<AgentSystem, AgentError> {
+            self.system_result.clone()
+        }
+
+        async fn agent_logs(&self, _lines: u32) -> Result<String, AgentError> {
+            self.logs_result.clone()
+        }
+
+        async fn agent_say(&self, sender: &str, message: &str) -> Result<(), AgentError> {
+            self.say_calls
+                .borrow_mut()
+                .push((sender.to_string(), message.to_string()));
+            self.say_result.clone()
+        }
+
+        async fn agent_whitelist(
+            &self,
+            _action: &str,
+            _player: Option<&str>,
+        ) -> Result<String, AgentError> {
+            self.whitelist_result.clone()
+        }
+
+        async fn agent_backup(&self) -> Result<String, AgentError> {
+            self.backup_result.clone()
+        }
+
+        async fn agent_restart(&self) -> Result<String, AgentError> {
+            self.restart_result.clone()
+        }
+
+        async fn agent_rcon(&self, command: &str) -> Result<String, AgentError> {
+            self.rcon_calls.borrow_mut().push(command.to_string());
+            self.rcon_result.clone()
+        }
+
         async fn respond(&self, _app_id: &str, _token: &str, content: &str) {
             self.responses.borrow_mut().push(content.to_string());
         }
@@ -290,6 +548,9 @@ mod tests {
             app_id: "app_123".to_string(),
             token: "tok_456".to_string(),
             server_location: "nbg1".to_string(),
+            command_channel_id: "100200300".to_string(),
+            caller_name: "Steve".to_string(),
+            command_data: None,
         }
     }
 
@@ -368,7 +629,6 @@ mod tests {
     fn test_stop_dispatches_and_reports_online_vs_offline_note() {
         let ctx = test_ctx();
 
-        // Case 1: Server is online
         let mut online_backend = MockBackend::new();
         online_backend.ping_result = PingResult {
             is_online: true,
@@ -386,7 +646,6 @@ mod tests {
         );
         assert!(online_backend.responses.borrow()[0].contains("Stopping Minecraft Server"));
 
-        // Case 2: Server port is already offline (still dispatches teardown for orphan cleanup)
         let offline_backend = MockBackend::new();
         futures_util::FutureExt::now_or_never(execute_command_with(
             "mc-stop",
@@ -399,6 +658,130 @@ mod tests {
             vec!["server-stop.yml".to_string()]
         );
         assert!(offline_backend.responses.borrow()[0].contains("Server port is already offline"));
+    }
+
+    #[test]
+    fn test_agent_commands_players_top_logs_say_whitelist_backup_restart_cmd() {
+        let mut ctx = test_ctx();
+        let backend = MockBackend::new();
+
+        futures_util::FutureExt::now_or_never(execute_command_with("mc-players", &ctx, &backend))
+            .unwrap();
+        assert!(
+            backend
+                .responses
+                .borrow()
+                .last()
+                .unwrap()
+                .contains("`Steve`")
+        );
+
+        futures_util::FutureExt::now_or_never(execute_command_with("mc-top", &ctx, &backend))
+            .unwrap();
+        assert!(
+            backend
+                .responses
+                .borrow()
+                .last()
+                .unwrap()
+                .contains("4000 MB")
+        );
+
+        futures_util::FutureExt::now_or_never(execute_command_with("mc-logs", &ctx, &backend))
+            .unwrap();
+        assert!(backend.responses.borrow().last().unwrap().contains("Done!"));
+
+        ctx.command_data = Some(CommandData {
+            name: "mc-say".to_string(),
+            options: vec![CommandOption {
+                name: "message".to_string(),
+                option_type: 3,
+                value: Some(serde_json::json!("Hello miners!")),
+                options: vec![],
+            }],
+        });
+        futures_util::FutureExt::now_or_never(execute_command_with("mc-say", &ctx, &backend))
+            .unwrap();
+        assert_eq!(
+            *backend.say_calls.borrow(),
+            vec![("Steve".to_string(), "Hello miners!".to_string())]
+        );
+
+        ctx.command_data = Some(CommandData {
+            name: "mc-whitelist".to_string(),
+            options: vec![CommandOption {
+                name: "add".to_string(),
+                option_type: 1,
+                value: None,
+                options: vec![CommandOption {
+                    name: "player".to_string(),
+                    option_type: 3,
+                    value: Some(serde_json::json!("Alex")),
+                    options: vec![],
+                }],
+            }],
+        });
+        futures_util::FutureExt::now_or_never(execute_command_with("mc-whitelist", &ctx, &backend))
+            .unwrap();
+        assert!(
+            backend
+                .responses
+                .borrow()
+                .last()
+                .unwrap()
+                .contains("Added Steve")
+        );
+
+        futures_util::FutureExt::now_or_never(execute_command_with("mc-backup", &ctx, &backend))
+            .unwrap();
+        assert!(
+            backend
+                .responses
+                .borrow()
+                .last()
+                .unwrap()
+                .contains("Saved the game")
+        );
+
+        futures_util::FutureExt::now_or_never(execute_command_with("mc-restart", &ctx, &backend))
+            .unwrap();
+        assert!(
+            backend
+                .responses
+                .borrow()
+                .last()
+                .unwrap()
+                .contains("Stopping the server")
+        );
+
+        ctx.command_data = Some(CommandData {
+            name: "mc-cmd".to_string(),
+            options: vec![CommandOption {
+                name: "command".to_string(),
+                option_type: 3,
+                value: Some(serde_json::json!("time set day")),
+                options: vec![],
+            }],
+        });
+        futures_util::FutureExt::now_or_never(execute_command_with("mc-cmd", &ctx, &backend))
+            .unwrap();
+        assert_eq!(
+            *backend.rcon_calls.borrow(),
+            vec!["time set day".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_agent_offline_graceful_response() {
+        let ctx = test_ctx();
+        let mut backend = MockBackend::new();
+        backend.players_result = Err(AgentError::Offline);
+
+        futures_util::FutureExt::now_or_never(execute_command_with("mc-players", &ctx, &backend))
+            .unwrap();
+        let msg = backend.responses.borrow()[0].clone();
+        assert!(msg.contains("currently offline"));
+        assert!(msg.contains("<#100200300>"));
     }
 
     #[test]

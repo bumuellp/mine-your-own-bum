@@ -8,6 +8,7 @@
 //! - Concurrency check on GitHub Actions API before dispatching
 //! - GitHub Actions workflow dispatch for `server-start.yml` and `server-stop.yml`
 
+pub mod agent;
 pub mod auth;
 pub mod discord;
 pub mod github;
