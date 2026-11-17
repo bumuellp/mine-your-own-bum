@@ -20,3 +20,6 @@ trivy.yaml
 
 # Template sync configuration (allows child repositories to define custom ignore rules)
 .templatesyncignore
+
+# Custom wrangler configurations
+integrations/discord-bot/wrangler.toml

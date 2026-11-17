@@ -28,7 +28,8 @@ if ! command -v jq >/dev/null 2>&1; then
 	exit 1
 fi
 
-RESP="$(curl -s -f "https://api.geysermc.org/v2/xbox/xuid/${GAMERTAG}" || true)"
+ENCODED_GAMERTAG="$(jq -rn --arg v "$GAMERTAG" '$v | @uri')"
+RESP="$(curl -s -f "https://api.geysermc.org/v2/xbox/xuid/${ENCODED_GAMERTAG}" || true)"
 if [ -z "$RESP" ]; then
 	echo "Error: Could not resolve Gamertag '${GAMERTAG}'. Please verify Xbox Live spelling." >&2
 	exit 1

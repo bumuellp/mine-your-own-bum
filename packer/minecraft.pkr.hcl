@@ -15,7 +15,13 @@ variable "hcloud_token" {
 variable "server_type" {
   type        = string
   default     = "cax11"
-  description = "Builder instance model (cax11 = 2 vCPU, 4GB RAM at €0.006/hr)"
+  description = "Builder instance model (e.g. cax11 for ARM, cpx11 for x86)"
+}
+
+variable "architecture" {
+  type        = string
+  default     = "arm"
+  description = "CPU architecture (arm or x86)"
 }
 
 variable "location" {
@@ -47,11 +53,12 @@ source "hcloud" "golden_image" {
   location     = var.location
   ssh_username = "root"
 
-  snapshot_name = "minecraft-golden-image-{{timestamp}}"
+  snapshot_name = "minecraft-golden-image-${var.architecture}-{{timestamp}}"
   snapshot_labels = {
-    role       = "minecraft-golden-image"
-    managed_by = "packer"
-    created_at = "{{timestamp}}"
+    role         = "minecraft-golden-image"
+    architecture = var.architecture
+    managed_by   = "packer"
+    created_at   = "{{timestamp}}"
   }
 }
 
@@ -62,6 +69,7 @@ build {
     inline = [
       "export DEBIAN_FRONTEND=noninteractive",
       "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do echo 'Waiting for initial cloud-init...'; sleep 2; done",
+      "if [ $(free -m | awk '/Mem:/ {print $2}') -lt 1500 ]; then echo '==> Low memory detected (<1.5GB). Configuring transient swapfile...'; fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile; fi",
       "systemctl start docker",
       "echo '==> Pre-caching Docker container images...'",
       "docker pull ${var.minecraft_image}",
@@ -69,6 +77,7 @@ build {
       "echo '==> Pre-configuring keyboard layout...'",
       "localectl set-keymap ${var.keyboard_layout} || loadkeys ${var.keyboard_layout} || true",
       "echo '==> Sanitizing instance state...'",
+      "if [ -f /swapfile ]; then echo '==> Removing transient swapfile...'; swapoff /swapfile && rm -f /swapfile; fi",
       "docker image prune -f",
       "cloud-init clean --logs --seed",
       "rm -rf /tmp/* /var/tmp/*",

@@ -1,6 +1,9 @@
 ---
 server:
   server_type: "cax21"
+  fallback_server_types: # Waterfall fallback if primary type is unavailable in location (cheapest to most available)
+    - "cax31"
+    - "cpx32"
   location: "fsn1"
   volume_size_gb: 10
   always_on: false
@@ -14,7 +17,7 @@ server:
 minecraft:
   server_type: "FABRIC"
   version: "26.3"  # renovate: datasource=mojang-java
-  jvm_memory: "6G"
+  jvm_memory: "5G"
   motd: "Mine Your Own Bum - On-Demand Crossplay Server"
   max_players: 20
   difficulty: "normal"
@@ -29,14 +32,17 @@ minecraft:
   ops:
     - "Steve"
     # - "00000000-0000-0000-0009-0123456789ab"  # Bedrock Gamertag
+  modrinth_modpack: ""
   modrinth_projects:
     - "fabric-api"
     - "lithium"
     - "ferrite-core"
     - "krypton"
     - "carpet"
-    - "geyser"
-    - "floodgate"
+    - "geyser:beta"     # Continuous beta channel build required on Modrinth
+    - "floodgate:beta"  # Continuous beta channel build required on Modrinth
+  curseforge_projects: []
+  rcon_startup_commands: []
   plugins: []
 
 dns:
@@ -55,6 +61,14 @@ backup:
 containers:
   minecraft_server: "itzg/minecraft-server:2026.10.0"  # renovate: datasource=docker depName=itzg/minecraft-server
   backup: "itzg/mc-backup:2026.10.1"                  # renovate: datasource=docker depName=itzg/mc-backup
+
+packer:
+  arm_builder: "cax11"  # Model used to build ARM golden image snapshot
+  x86_builder: "cpx12"  # Model used to build x86 golden image snapshot (min 40GB disk)
+  fallback_locations: # Datacenter fallback order for builder VMs (snapshots are global)
+    - "fsn1"
+    - "nbg1"
+    - "hel1"
 
 discord:
   enabled: false

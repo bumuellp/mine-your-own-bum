@@ -45,9 +45,15 @@ elif [ -z "$WATCHDOG_PAT" ] || [[ "$WATCHDOG_PAT" == *"YOUR_"* ]]; then
 elif [ -z "$TARGET_REPO" ]; then
 	echo -e "${YELLOW}[!] Idle Watchdog:${NC} Could not determine GitHub repository (set GITHUB_REPOSITORY). Skipping PAT check."
 else
+	GITHUB_API_VER="2026-03-10"
+	if [ -f "${REPO_ROOT}/.github-api-version" ]; then
+		GITHUB_API_VER="$(tr -d '[:space:]' <"${REPO_ROOT}/.github-api-version")"
+	fi
+
 	PAT_HTTP="$(curl -s -o /dev/null -w "%{http_code}" \
 		-H "Authorization: Bearer ${WATCHDOG_PAT}" \
 		-H "Accept: application/vnd.github+json" \
+		-H "X-GitHub-Api-Version: ${GITHUB_API_VER}" \
 		"https://api.github.com/repos/${TARGET_REPO}/actions/workflows/server-stop.yml")"
 	if [ "$PAT_HTTP" = "200" ]; then
 		echo -e "${GREEN}[✓] Idle Watchdog PAT:${NC} Token can access '${TARGET_REPO}' server-stop.yml workflow."

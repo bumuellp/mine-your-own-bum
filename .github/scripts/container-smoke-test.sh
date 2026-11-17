@@ -11,6 +11,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPO_ROOT}"
 
 COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
+COMPOSE_MODPACK_FILE="${REPO_ROOT}/docker-compose.modpack.yml"
+CLOUD_INIT_FILE="${REPO_ROOT}/cloud-init.yaml"
 MOUNT_DIR="/mnt/mc-data"
 
 cleanup() {
@@ -19,6 +21,7 @@ cleanup() {
 		docker compose -f "$COMPOSE_FILE" down -v --remove-orphans >/dev/null 2>&1 || true
 		rm -f "$COMPOSE_FILE"
 	fi
+	rm -f "$COMPOSE_MODPACK_FILE" "$CLOUD_INIT_FILE"
 	if [ -d "$MOUNT_DIR" ]; then
 		sudo rm -rf "$MOUNT_DIR" 2>/dev/null || rm -rf "$MOUNT_DIR" 2>/dev/null || true
 	fi
@@ -27,14 +30,18 @@ cleanup() {
 
 trap cleanup EXIT
 
-echo "==> Step 1: Rendering Docker Compose specification via OpenTofu..."
+echo "==> Step 1: Rendering Docker Compose & Cloud-Init specifications via OpenTofu..."
 tofu -chdir=tests/smoke-test init -input=false >/dev/null
 tofu -chdir=tests/smoke-test apply -auto-approve -input=false >/dev/null
 tofu -chdir=tests/smoke-test output -raw docker_compose >"$COMPOSE_FILE"
+tofu -chdir=tests/smoke-test output -raw docker_compose_modpack >"$COMPOSE_MODPACK_FILE"
+tofu -chdir=tests/smoke-test output -raw cloud_init >"$CLOUD_INIT_FILE"
 
-echo "==> Step 2: Validating Docker Compose syntax..."
+echo "==> Step 2: Validating Docker Compose & Cloud-Init syntax..."
 docker compose -f "$COMPOSE_FILE" config >/dev/null
-echo "[✓] Docker Compose syntax valid."
+docker compose -f "$COMPOSE_MODPACK_FILE" config >/dev/null
+grep -q "^#cloud-config" "$CLOUD_INIT_FILE"
+echo "[✓] Docker Compose (baseline + modpack/CurseForge) and Cloud-Init syntax valid."
 
 echo "==> Step 3: Preparing persistent mount directory..."
 if command -v sudo >/dev/null 2>&1; then
@@ -49,7 +56,7 @@ echo "==> Step 4: Launching Minecraft test container..."
 docker compose -f "$COMPOSE_FILE" up -d mc-server
 
 echo "==> Step 5: Awaiting engine initialization and healthcheck..."
-MAX_ATTEMPTS=40
+MAX_ATTEMPTS=25 # 25 * 6s = 150s (typical cold boot takes 45-60s)
 ATTEMPT=0
 HEALTHY=false
 
@@ -60,6 +67,16 @@ while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
 		HEALTHY=true
 		break
 	fi
+
+	RESTART_COUNT="$(docker inspect -f '{{.State.RestartCount}}' mc-server 2>/dev/null || echo "0")"
+	CONTAINER_STATUS="$(docker inspect -f '{{.State.Status}}' mc-server 2>/dev/null || echo "running")"
+	if [ "$RESTART_COUNT" -ge 2 ] || [ "$CONTAINER_STATUS" = "restarting" ]; then
+		echo "ERROR: Minecraft container entered crashloop (status: '${CONTAINER_STATUS}', restarts: ${RESTART_COUNT})." >&2
+		echo "=== Container Logs ===" >&2
+		docker logs --tail 100 mc-server >&2 || true
+		exit 1
+	fi
+
 	echo "    Health status: '${STATUS}' (attempt $((ATTEMPT + 1))/${MAX_ATTEMPTS})..."
 	sleep 6
 	ATTEMPT=$((ATTEMPT + 1))

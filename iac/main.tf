@@ -10,8 +10,39 @@ data "sops_file" "secrets" {
 
 locals {
   hcloud_token  = coalesce(var.hcloud_token, try(data.sops_file.secrets[0].data["hcloud_token"], null))
-  rcon_password = coalesce(var.rcon_password, try(data.sops_file.secrets[0].data["rcon_password"], "secret-mc-rcon-pass"))
+  rcon_password = coalesce(var.rcon_password, data.sops_file.secrets[0].data["rcon_password"])
   github_pat    = try(coalesce(var.github_pat, try(data.sops_file.secrets[0].data["github_pat"], null)), "")
+
+  # Optional in-game authentication password/PIN (interpolated into rcon_startup_commands via ${AUTH_PASSWORD})
+  raw_auth_password = try(coalesce(
+    var.auth_password,
+    try(data.sops_file.secrets[0].data["auth_password"], null),
+    try(local.settings.minecraft.auth_password, null)
+  ), "")
+  auth_password = (
+    trimspace(local.raw_auth_password) != "" &&
+    lower(trimspace(local.raw_auth_password)) != "none"
+  ) ? trimspace(local.raw_auth_password) : ""
+
+  # Optional CurseForge API key for curseforge_projects
+  raw_cf_api_key = try(coalesce(
+    var.cf_api_key,
+    try(data.sops_file.secrets[0].data["cf_api_key"], null)
+  ), "")
+  cf_api_key = trimspace(local.raw_cf_api_key)
+
+  # Loader-agnostic modpack, project, plugin, and startup RCON command lists
+  modrinth_modpack    = try(trimspace(local.settings.minecraft.modrinth_modpack), "")
+  modrinth_projects   = try(local.settings.minecraft.modrinth_projects, [])
+  curseforge_projects = try(local.settings.minecraft.curseforge_projects, [])
+  plugins             = try(local.settings.minecraft.plugins, [])
+
+  raw_rcon_startup_commands = try(local.settings.minecraft.rcon_startup_commands, [])
+  rcon_startup_commands = [
+    for cmd in local.raw_rcon_startup_commands :
+    replace(cmd, "$${AUTH_PASSWORD}", local.auth_password)
+    if !can(regex("\\$\\{AUTH_PASSWORD\\}", cmd)) || local.auth_password != ""
+  ]
 
   # Dedicated S3 / R2 Backup Configuration
   backup_s3_bucket     = try(data.sops_file.secrets[0].data["backup_s3_bucket"], "")
@@ -21,10 +52,9 @@ locals {
   backup_s3_provider   = can(regex("r2\\.cloudflarestorage\\.com", local.backup_s3_endpoint)) ? "Cloudflare" : (can(regex("your-objectstorage\\.com|hetzner", local.backup_s3_endpoint)) ? "Ceph" : (can(regex("amazonaws\\.com", local.backup_s3_endpoint)) ? "AWS" : "Other"))
 
   # Explicit server settings & console credentials
-  server_type      = local.settings.server.server_type
+  server_type      = coalesce(var.server_type, local.settings.server.server_type)
   ssh_keys         = local.settings.server.ssh_keys
   keyboard_layout  = local.settings.server.keyboard_layout
-  use_golden_image = local.settings.server.use_golden_image
   console_password = data.sops_file.secrets[0].data["console_password"]
 
   # Centralized container images
@@ -36,11 +66,16 @@ data "hcloud_server_type" "server" {
   name = local.server_type
 }
 
-data "hcloud_image" "golden" {
-  count             = local.use_golden_image ? 1 : 0
+data "hcloud_images" "golden" {
   with_selector     = "role=minecraft-golden-image"
-  with_architecture = data.hcloud_server_type.server.architecture
+  with_architecture = [data.hcloud_server_type.server.architecture]
   most_recent       = true
+}
+
+locals {
+  golden_image_id  = length(data.hcloud_images.golden.images) > 0 ? data.hcloud_images.golden.images[0].id : null
+  use_golden_image = local.settings.server.use_golden_image && local.golden_image_id != null
+  effective_image  = local.use_golden_image ? local.golden_image_id : "docker-ce"
 }
 
 provider "hcloud" {
@@ -110,8 +145,12 @@ locals {
     rcon_password          = local.rcon_password
     minecraft_image        = local.minecraft_image
     backup_image           = local.backup_image
-    modrinth_projects      = local.settings.minecraft.modrinth_projects
-    plugins                = local.settings.minecraft.plugins
+    modrinth_modpack       = local.modrinth_modpack
+    modrinth_projects      = local.modrinth_projects
+    curseforge_projects    = local.curseforge_projects
+    cf_api_key             = local.cf_api_key
+    rcon_startup_commands  = local.rcon_startup_commands
+    plugins                = local.plugins
     backup_enabled         = local.settings.backup.enabled
     backup_interval        = local.settings.backup.interval
     backup_initial_delay   = local.settings.backup.initial_delay
@@ -124,18 +163,20 @@ locals {
   })
 
   cloud_init = templatefile("${path.module}/templates/cloud-init.yaml.tftpl", {
-    always_on         = local.settings.server.always_on
-    idle_timeout      = local.settings.server.idle_timeout_minutes
-    github_repository = var.github_repository
-    github_pat        = local.github_pat
-    keyboard_layout   = local.keyboard_layout
-    console_password  = local.console_password
-    volume_id         = module.volume.id
-    docker_compose    = local.docker_compose
-    watchdog_script   = file("${path.module}/files/scripts/idle-watchdog.sh")
-    bootstrap_script  = file("${path.module}/files/scripts/bootstrap-volume.sh")
-    systemd_service   = file("${path.module}/files/systemd/mc-idle-watchdog.service")
-    systemd_timer     = file("${path.module}/files/systemd/mc-idle-watchdog.timer")
+    always_on          = (var.github_repository == null) ? false : local.settings.server.always_on
+    idle_timeout       = local.settings.server.idle_timeout_minutes
+    github_repository  = coalesce(var.github_repository, "")
+    github_pat         = local.github_pat
+    github_api_version = trimspace(file("${path.module}/../.github-api-version"))
+    keyboard_layout    = local.keyboard_layout
+    console_password   = local.console_password
+    volume_id          = module.volume.id
+    docker_compose     = local.docker_compose
+    watchdog_script    = file("${path.module}/files/scripts/idle-watchdog.sh")
+    bootstrap_script   = file("${path.module}/files/scripts/bootstrap-volume.sh")
+    prune_script       = file("${path.module}/files/scripts/prune-rclone-backups.sh")
+    systemd_service    = file("${path.module}/files/systemd/mc-idle-watchdog.service")
+    systemd_timer      = file("${path.module}/files/systemd/mc-idle-watchdog.timer")
   })
 }
 
@@ -143,8 +184,8 @@ locals {
 module "server" {
   source       = "git::https://github.com/bumuellp/tofu-bum.git//modules/hcloud-ephemeral-server?ref=v1.0.1"
   name         = var.server_name
-  server_type  = local.settings.server.server_type
-  image        = local.use_golden_image ? data.hcloud_image.golden[0].id : "docker-ce"
+  server_type  = local.server_type
+  image        = local.effective_image
   location     = local.settings.server.location
   firewall_ids = [module.firewall.id]
   volume_id    = module.volume.id

@@ -22,6 +22,15 @@ git fetch "$UPSTREAM_REMOTE" main
 
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 echo "Merging upstream changes into '${CURRENT_BRANCH}'..."
-git merge "${UPSTREAM_REMOTE}/main" --allow-unrelated-histories -m "chore(sync): merge upstream template updates"
+
+# Ignore files from .templatesyncignore during merge to prevent overwriting local customizations
+git merge "${UPSTREAM_REMOTE}/main" --allow-unrelated-histories --no-commit --no-ff || true
+if [ -f .templatesyncignore ]; then
+	while IFS= read -r pattern; do
+		[[ -z "$pattern" || "$pattern" =~ ^# ]] && continue
+		git checkout HEAD -- "$pattern" 2>/dev/null || true
+	done <.templatesyncignore
+fi
+git commit -m "chore(sync): merge upstream template updates"
 
 echo "Template sync completed successfully."

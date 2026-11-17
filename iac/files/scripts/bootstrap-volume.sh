@@ -42,11 +42,13 @@ fi
 mkdir -p "$MOUNT_POINT"
 
 # Check if filesystem already exists
-if ! blkid "$DEVICE" >/dev/null 2>&1; then
+udevadm settle --timeout=10 2>/dev/null || true
+FSTYPE="$(lsblk -no FSTYPE "$DEVICE" 2>/dev/null | tr -d '[:space:]' || true)"
+if [ -z "$FSTYPE" ] && ! blkid -p "$DEVICE" >/dev/null 2>&1; then
 	log "Device $DEVICE is unformatted. Formatting with ext4 (label: mc-data)..."
-	mkfs.ext4 -F -L mc-data "$DEVICE"
+	mkfs.ext4 -L mc-data "$DEVICE"
 else
-	log "Existing filesystem detected on $DEVICE. Preserving world data."
+	log "Existing filesystem (${FSTYPE:-detected}) on $DEVICE. Preserving world data."
 fi
 
 # Add persistent mount to /etc/fstab if missing

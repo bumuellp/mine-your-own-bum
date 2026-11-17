@@ -21,16 +21,27 @@ jobs:
       SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Parse Settings
+        id: cfg
+        uses: bumuellp/lights-camera-bum-action/parse-config@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
+        with:
+          file: config/settings.yaml
+          fallback-file: config/settings.example.yaml
+          keys: |
+            server.location
+            server.server_type
+            server.fallback_server_types
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version_file: .tofu-version
 
       - name: Decrypt Secrets
         id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@bb6e472c54d235d27b4c9451921820bac9ad2815
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
@@ -41,12 +52,25 @@ jobs:
             s3_access_key
             s3_secret_key
             state_encryption_passphrase
+            hcloud_token
+
+      - name: Resolve Server Placement
+        id: placement
+        uses: bumuellp/lights-camera-bum-action/resolve-hcloud-placement@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
+        with:
+          token: ${{ fromJSON(steps.sec.outputs.json).hcloud_token }}
+          server-types: >-
+            ${{ fromJSON(steps.cfg.outputs.json)['server.server_type'] }},
+            ${{ fromJSON(steps.cfg.outputs.json)['server.fallback_server_types'] }}
+          locations: ${{ fromJSON(steps.cfg.outputs.json)['server.location'] || 'fsn1' }}
 
       - name: Validate Pre-flight Credentials & Configuration
         run: ./scripts/preflight.sh
+        env:
+          TF_VAR_server_type: ${{ steps.placement.outputs.server-type }}
 
       - name: Initialize OpenTofu Backend
-        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@bb6e472c54d235d27b4c9451921820bac9ad2815
+        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           working-directory: iac
           bucket: ${{ fromJSON(steps.sec.outputs.json).s3_bucket }}
@@ -58,46 +82,15 @@ jobs:
 
       - name: OpenTofu Apply (Provision Server)
         id: tofu_apply
-        working-directory: iac
         env:
+          TF_VAR_server_type: ${{ steps.placement.outputs.server-type }}
           TF_VAR_github_repository: ${{ github.repository }}
           TF_VAR_github_pat: ${{ secrets.PAT_WATCHDOG || '' }}
-        run: |
-          ALREADY_RUNNING=false
-          if tofu state list module.server.hcloud_server.this >/dev/null 2>&1; then
-            ALREADY_RUNNING=true
-            echo "Minecraft server instance is already running in remote state."
-          else
-            # Ensure persistent storage volume exists before provisioning compute and attachments
-            if ! tofu state list module.volume.hcloud_volume.this >/dev/null 2>&1; then
-              echo "Persistent volume not found in remote state; creating volume first..."
-              tofu apply -target=module.volume -auto-approve
-            fi
-            tofu apply -auto-approve
-          fi
-
-          TOFU_OUT=$(tofu output -json)
-          DNS_TOKEN=$(echo "$TOFU_OUT" | jq -r '.dns_token.value // ""')
-          if [ -n "$DNS_TOKEN" ]; then
-            echo "::add-mask::$DNS_TOKEN"
-          fi
-
-          cat << EOF >> "$GITHUB_OUTPUT"
-          already_running=$ALREADY_RUNNING
-          ipv4=$(echo "$TOFU_OUT" | jq -r '.server_ipv4.value // ""')
-          ipv6=$(echo "$TOFU_OUT" | jq -r '.server_ipv6.value // ""')
-          dns_enabled=$(echo "$TOFU_OUT" | jq -r '.dns_enabled.value // false')
-          dns_provider=$(echo "$TOFU_OUT" | jq -r '.dns_provider.value // ""')
-          dns_domain=$(echo "$TOFU_OUT" | jq -r '.dns_domain.value // ""')
-          dns_subname=$(echo "$TOFU_OUT" | jq -r '.dns_subname.value // ""')
-          dns_ttl=$(echo "$TOFU_OUT" | jq -r '.dns_ttl.value // 60')
-          dns_fqdn=$(echo "$TOFU_OUT" | jq -r '.dns_fqdn.value // ""')
-          dns_token=$DNS_TOKEN
-          EOF
+        run: .github/scripts/provision-server.sh
 
       - name: Sync DNS IPv4 Record
         if: steps.tofu_apply.outputs.dns_enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@ac10d6046ee766e3bd5b7d036c4d1aaf5fb71589 # v1.9.2
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           provider: ${{ steps.tofu_apply.outputs.dns_provider }}
           token: ${{ steps.tofu_apply.outputs.dns_token }}
@@ -110,7 +103,7 @@ jobs:
 
       - name: Sync DNS IPv6 Record
         if: steps.tofu_apply.outputs.dns_enabled == 'true' && steps.tofu_apply.outputs.ipv6 != ''
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@ac10d6046ee766e3bd5b7d036c4d1aaf5fb71589 # v1.9.2
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           provider: ${{ steps.tofu_apply.outputs.dns_provider }}
           token: ${{ steps.tofu_apply.outputs.dns_token }}
@@ -123,81 +116,21 @@ jobs:
 
       - name: Verify Server Readiness & Healthcheck
         timeout-minutes: 6
-        run: |
-          SERVER_IP="${{ steps.tofu_apply.outputs.ipv4 }}"
-          echo "Waiting for Minecraft server on $SERVER_IP:25565 to become reachable..."
-
-          MAX_ATTEMPTS=50
-          ATTEMPT=0
-          ONLINE=false
-
-          while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
-            if nc -z -w 3 "$SERVER_IP" 25565 2>/dev/null; then
-              echo "::notice ::Minecraft server is ONLINE and accepting connections at $SERVER_IP:25565!"
-              ONLINE=true
-              break
-            fi
-            echo "Waiting for Minecraft engine to initialize... (attempt $((ATTEMPT + 1))/$MAX_ATTEMPTS)"
-            sleep 6
-            ATTEMPT=$((ATTEMPT + 1))
-          done
-
-          if [ "$ONLINE" != "true" ]; then
-            echo "::error ::Minecraft server failed to respond on port 25565 within timeout window."
-            exit 1
-          fi
+        env:
+          SERVER_IP: ${{ steps.tofu_apply.outputs.ipv4 }}
+        run: .github/scripts/verify-server-readiness.sh
 
       - name: Generate GitHub Actions Step Summary
-        run: |
-          IPV4="${{ steps.tofu_apply.outputs.ipv4 }}"
-          IPV6="${{ steps.tofu_apply.outputs.ipv6 }}"
-          DNS_ENABLED="${{ steps.tofu_apply.outputs.dns_enabled }}"
-          FQDN="${{ steps.tofu_apply.outputs.dns_fqdn }}"
-          ALREADY_RUNNING="${{ steps.tofu_apply.outputs.already_running }}"
+        env:
+          IPV4: ${{ steps.tofu_apply.outputs.ipv4 }}
+          IPV6: ${{ steps.tofu_apply.outputs.ipv6 }}
+          DNS_ENABLED: ${{ steps.tofu_apply.outputs.dns_enabled }}
+          FQDN: ${{ steps.tofu_apply.outputs.dns_fqdn }}
+          ALREADY_RUNNING: ${{ steps.tofu_apply.outputs.already_running }}
+          SERVER_TYPE_VAL: ${{ steps.tofu_apply.outputs.server_type }}
+          SERVER_ARCH_VAL: ${{ steps.tofu_apply.outputs.server_arch }}
+        run: .github/scripts/generate-start-summary.sh
 
-          BOOT_STATUS="The ephemeral cloud server has been provisioned and persistent storage attached."
-          if [ "$ALREADY_RUNNING" = "true" ]; then
-            BOOT_STATUS="The server instance was already running in remote state; configuration is unchanged."
-          fi
-
-          if [ "$DNS_ENABLED" = "true" ] && [ -n "$FQDN" ]; then
-            JAVA_HOST="$FQDN"
-            BEDROCK_HOST="$FQDN"
-            DISPLAY_DOMAIN="$FQDN"
-          else
-            JAVA_HOST="$IPV4"
-            BEDROCK_HOST="$IPV4"
-            DISPLAY_DOMAIN="*Not configured (using raw IP)*"
-          fi
-
-          IPV6_ROW=""
-          if [ -n "$IPV6" ]; then
-            IPV6_ROW="| **IPv6 Address** | \`$IPV6\` |"
-          fi
-
-          cat << EOF >> "$GITHUB_STEP_SUMMARY"
-          ## 🎮 Minecraft Server Status: **ONLINE**
-
-          $BOOT_STATUS
-
-          ### 🌐 Connection Information
-          | Parameter | Value |
-          | :--- | :--- |
-          | **Domain / FQDN** | \`$DISPLAY_DOMAIN\` |
-          | **Java Edition** | \`$JAVA_HOST:25565\` |
-          | **Bedrock Edition** | \`$BEDROCK_HOST:19132\` (Port: \`19132\`) |
-          | **IPv4 Address** | \`$IPV4\` |
-          $IPV6_ROW
-
-          > [!NOTE]
-          > Because compute instances are completely ephemeral, **every boot is a fresh boot**.
-          > Docker and Minecraft containers initialize and verify runtime files upon startup.
-          > It may take **1 to 2 minutes** before the server begins answering player pings on port 25565 / 19132.
-
-          ### 🛑 Shutdown & Idle Watchdog
-          - **Automatic Idle Stop**: If no players are online for the configured idle threshold,
-            the server automatically saves world data and terminates the VM to prevent cloud costs.
-          - **Manual Stop**: Run the **Stop Minecraft Server** workflow whenever you finish playing.
-          - **Data Retention**: World saves, player data, and configurations are permanently stored
-            on the persistent Hetzner volume and survive VM destruction.
-          EOF
+      - name: Scrub Plaintext Secrets
+        if: always()
+        run: rm -f config/secrets.yaml

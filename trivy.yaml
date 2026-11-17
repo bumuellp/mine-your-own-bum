@@ -13,4 +13,4 @@ scanners:
 vulnerability:
   ignorefile: .trivyignore
 
-exit-code: 0
+exit-code: 1

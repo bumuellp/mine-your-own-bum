@@ -1,7 +1,7 @@
 ---
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b  # v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -10,11 +10,12 @@ repos:
         args: [--fix=lf]
 
   - repo: https://github.com/bumuellp/cabumtain-hook
-    rev: v1.5.0
+    rev: db36ca8a373fb17c83b9ec68eac199a5be3d0ff3  # v1.6.1
     hooks:
       - id: commit-msg
       - id: secret-scan
       - id: shell-lint
+      - id: shell-tests
       - id: yaml-xml-lint
       - id: trivy-config
       - id: trivy-fs

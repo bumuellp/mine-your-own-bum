@@ -3,6 +3,11 @@ name: Stop Minecraft Server
 
 'on':
   workflow_dispatch:
+    inputs:
+      reason:
+        description: "Shutdown trigger source (manual or idle-watchdog)"
+        required: false
+        default: "manual"
   repository_dispatch:
     types: [minecraft-idle-stop, stop-minecraft-server]
 
@@ -23,16 +28,16 @@ jobs:
       SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version_file: .tofu-version
 
       - name: Decrypt Secrets
         id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@bb6e472c54d235d27b4c9451921820bac9ad2815
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
@@ -43,9 +48,10 @@ jobs:
             s3_access_key
             s3_secret_key
             state_encryption_passphrase
+            hcloud_token
 
       - name: Initialize OpenTofu Backend
-        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@bb6e472c54d235d27b4c9451921820bac9ad2815
+        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           working-directory: iac
           bucket: ${{ fromJSON(steps.sec.outputs.json).s3_bucket }}
@@ -57,39 +63,13 @@ jobs:
 
       - name: Refresh State & Parse DNS Configuration
         id: dns_cfg
-        working-directory: iac
         env:
           TF_VAR_github_repository: ${{ github.repository }}
-        run: |
-          tofu refresh
-
-          ALREADY_STOPPED=false
-          if ! tofu state list module.server.hcloud_server.this >/dev/null 2>&1; then
-            ALREADY_STOPPED=true
-            echo "Minecraft server instance is already absent from remote state."
-          fi
-
-          TOFU_OUT=$(tofu output -json)
-          SERVER_ID=$(echo "$TOFU_OUT" | jq -r '.server_id.value // ""')
-          DNS_TOKEN=$(echo "$TOFU_OUT" | jq -r '.dns_token.value // ""')
-          if [ -n "$DNS_TOKEN" ]; then
-            echo "::add-mask::$DNS_TOKEN"
-          fi
-
-          cat << EOF >> "$GITHUB_OUTPUT"
-          already_stopped=$ALREADY_STOPPED
-          server_id=$SERVER_ID
-          enabled=$(echo "$TOFU_OUT" | jq -r '.dns_enabled.value // false')
-          provider=$(echo "$TOFU_OUT" | jq -r '.dns_provider.value // ""')
-          domain=$(echo "$TOFU_OUT" | jq -r '.dns_domain.value // ""')
-          subname=$(echo "$TOFU_OUT" | jq -r '.dns_subname.value // ""')
-          fqdn=$(echo "$TOFU_OUT" | jq -r '.dns_fqdn.value // ""')
-          dns_token=$DNS_TOKEN
-          EOF
+        run: .github/scripts/parse-stop-state.sh
 
       - name: Delete DNS IPv4 Record
         if: steps.dns_cfg.outputs.enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@ac10d6046ee766e3bd5b7d036c4d1aaf5fb71589 # v1.9.2
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           provider: ${{ steps.dns_cfg.outputs.provider }}
           token: ${{ steps.dns_cfg.outputs.dns_token }}
@@ -100,7 +80,7 @@ jobs:
 
       - name: Delete DNS IPv6 Record
         if: steps.dns_cfg.outputs.enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@ac10d6046ee766e3bd5b7d036c4d1aaf5fb71589 # v1.9.2
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
         with:
           provider: ${{ steps.dns_cfg.outputs.provider }}
           token: ${{ steps.dns_cfg.outputs.dns_token }}
@@ -115,6 +95,7 @@ jobs:
         run: .github/scripts/graceful-shutdown.sh
         env:
           SERVER_ID: ${{ steps.dns_cfg.outputs.server_id }}
+          HCLOUD_TOKEN: ${{ fromJSON(steps.sec.outputs.json).hcloud_token }}
 
       - name: OpenTofu Destroy Server (Targeted)
         if: steps.dns_cfg.outputs.already_stopped != 'true'
@@ -126,32 +107,12 @@ jobs:
           tofu destroy -target=module.server -auto-approve
 
       - name: Generate GitHub Actions Step Summary
-        run: |
-          TRIGGER_EVENT="${{ github.event_name }}"
-          FQDN="${{ steps.dns_cfg.outputs.fqdn }}"
-          ALREADY_STOPPED="${{ steps.dns_cfg.outputs.already_stopped }}"
+        env:
+          FQDN: ${{ steps.dns_cfg.outputs.fqdn }}
+          ALREADY_STOPPED: ${{ steps.dns_cfg.outputs.already_stopped }}
+          REASON: ${{ github.event.inputs.reason || 'manual' }}
+        run: .github/scripts/generate-stop-summary.sh
 
-          STOP_REASON="The server was manually shut down via workflow dispatch."
-          if [ "$ALREADY_STOPPED" = "true" ]; then
-            STOP_REASON="The server was already offline; no compute teardown was needed."
-          elif [ "$TRIGGER_EVENT" = "repository_dispatch" ]; then
-            STOP_REASON="The server was automatically shut down by the **Idle Watchdog** because no players were active."
-          fi
-
-          DNS_ROW=""
-          if [ -n "$FQDN" ]; then
-            DNS_ROW="- **DNS Record**: \`$FQDN\` entry removed."
-          fi
-
-          cat << EOF >> "$GITHUB_STEP_SUMMARY"
-          ## 🛑 Minecraft Server Status: **OFFLINE**
-
-          $STOP_REASON
-
-          ### 💾 State Preservation
-          - **Compute Instance**: Terminated to halt compute charges.
-          - **Persistent Volume**: Safe & retained on Hetzner Cloud.
-          $DNS_ROW
-
-          To play again, trigger the **Start Minecraft Server** workflow.
-          EOF
+      - name: Scrub Plaintext Secrets
+        if: always()
+        run: rm -f config/secrets.yaml

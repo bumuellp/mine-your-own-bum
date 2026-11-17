@@ -2,12 +2,26 @@
 name: Container Smoke Test
 
 'on':
-  pull_request:
+  push:
+    branches: [main]
     paths:
       - 'iac/templates/docker-compose.yml.tftpl'
+      - 'iac/templates/cloud-init.yaml.tftpl'
       - 'config/settings.yaml'
       - 'config/settings.example.yaml'
       - 'tests/smoke-test/**'
+      - '.tofu-version'
+      - '.github/scripts/container-smoke-test.sh'
+      - '.github/workflows/container-smoke-test.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'iac/templates/docker-compose.yml.tftpl'
+      - 'iac/templates/cloud-init.yaml.tftpl'
+      - 'config/settings.yaml'
+      - 'config/settings.example.yaml'
+      - 'tests/smoke-test/**'
+      - '.tofu-version'
       - '.github/scripts/container-smoke-test.sh'
       - '.github/workflows/container-smoke-test.yml'
   workflow_dispatch:
@@ -26,10 +40,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version_file: .tofu-version
 

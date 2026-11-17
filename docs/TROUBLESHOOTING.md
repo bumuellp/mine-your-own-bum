@@ -132,7 +132,7 @@ Even after `server-start.yml` publishes the new IP with a 60-second TTL, interme
 
 ##### Solution 1: Connect via Direct IP (Recommended for Rapid Restarts)
 During rapid testing or successive restarts, bypass DNS entirely:
-1. Open the **Job Summary** in GitHub Actions (under the completed `server-start.yml` run) or check the Discord bot start confirmation message.
+1. Open the **Job Summary** in GitHub Actions (under the completed `server-start.yml` run) or run `/mc-status` in Discord (which displays the active direct IP and direct connect note).
 2. Copy the raw IPv4 address (e.g., `142.132.x.x`).
 3. In Minecraft, use **Direct Connection** (or edit the server entry) and paste the IP directly. Default port `25565` does not need to be typed.
 

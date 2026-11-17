@@ -22,8 +22,10 @@ ALWAYS_ON="${ALWAYS_ON:-false}"
 IDLE_TIMEOUT_MINUTES="${IDLE_TIMEOUT_MINUTES:-15}"
 GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-}"
 GITHUB_PAT="${GITHUB_PAT:-}"
-STATE_FILE="/var/run/mc-idle-counter"
-PENDING_STOP_FILE="/var/run/mc-idle-stopping"
+STATE_FILE="${STATE_FILE:-/var/run/mc-idle-counter}"
+PENDING_STOP_FILE="${PENDING_STOP_FILE:-/var/run/mc-idle-stopping}"
+BOOT_FAIL_FILE="${BOOT_FAIL_FILE:-/var/run/mc-boot-fail-counter}"
+BOOT_TIMEOUT_MINUTES="${BOOT_TIMEOUT_MINUTES:-15}"
 
 if [ "$ALWAYS_ON" = "true" ]; then
 	exit 0
@@ -35,9 +37,9 @@ dispatch_stop_workflow() {
 		if curl --fail --retry 3 --retry-delay 5 --max-time 15 -sS -X POST \
 			-H "Accept: application/vnd.github+json" \
 			-H "Authorization: Bearer ${GITHUB_PAT}" \
-			-H "X-GitHub-Api-Version: 2022-11-28" \
+			-H "X-GitHub-Api-Version: ${GITHUB_API_VERSION:-2026-03-10}" \
 			"https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/server-stop.yml/dispatches" \
-			-d '{"ref":"main"}'; then
+			-d '{"ref":"main","inputs":{"reason":"idle-watchdog"}}'; then
 			log_console "GitHub Actions stop workflow dispatched successfully."
 			rm -f "$STATE_FILE" "$PENDING_STOP_FILE"
 			return 0
@@ -67,9 +69,29 @@ fi
 # Query player count via RCON
 RCON_OUTPUT="$(docker exec mc-server rcon-cli list 2>/dev/null || true)"
 if [ -z "$RCON_OUTPUT" ]; then
-	# Server might still be starting up
+	BOOT_TICKS=0
+	if [ -f "$BOOT_FAIL_FILE" ]; then
+		BOOT_TICKS="$(cat "$BOOT_FAIL_FILE" 2>/dev/null || echo 0)"
+	fi
+	BOOT_TICKS=$((BOOT_TICKS + 1))
+	echo "$BOOT_TICKS" >"$BOOT_FAIL_FILE"
+	echo "Idle Watchdog: Server engine not ready yet. Boot/init ticks: ${BOOT_TICKS}/${BOOT_TIMEOUT_MINUTES}"
+
+	if [ "$BOOT_TICKS" -ge "$BOOT_TIMEOUT_MINUTES" ]; then
+		log_console "Server failed to become responsive after ${BOOT_TIMEOUT_MINUTES} minutes (crashloop or hang). Initiating emergency shutdown..."
+		touch "$PENDING_STOP_FILE"
+		docker stop mc-backup || true
+		docker stop mc-server || true
+		if dispatch_stop_workflow; then
+			sync
+			systemctl poweroff || true
+		fi
+	fi
 	exit 0
 fi
+
+# Reset boot fail counter once RCON is responsive
+rm -f "$BOOT_FAIL_FILE"
 
 # PaperMC output: "There are X of a max of Y players online: ..."
 PLAYER_COUNT="$(echo "$RCON_OUTPUT" | grep -oP 'There are \K[0-9]+' || echo "$RCON_OUTPUT" | grep -oE '[0-9]+' | head -n 1 || echo "")"
@@ -111,5 +133,8 @@ if [ "$CURRENT_TICKS" -ge "$IDLE_TIMEOUT_MINUTES" ]; then
 	docker stop mc-server || true
 
 	# 4. Trigger GitHub Actions stop workflow
-	dispatch_stop_workflow
+	if dispatch_stop_workflow; then
+		sync
+		systemctl poweroff || true
+	fi
 fi

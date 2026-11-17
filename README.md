@@ -26,17 +26,17 @@ It combines ephemeral compute instances with persistent block volume retention, 
                    v                v
          [ server-start.yml ]     [ server-stop.yml ] <---+
                  |                        |               |
-     [ OpenTofu / tofu-bum ]              |               | (Idle Timeout
-     - Attaches Block Volume              |               |  Watchdog)
-     - Boots Cloud-Init Instance          |               |
-     - Updates Dynamic DNS                |               |
-                 |                        |               |
-         (Server Running)                 |               |
-                 |                        |               |
-       [ Idle Watchdog Timer ]            |               |
-       - Monitors RCON Players            |               |
-       - Flushes World Chunks             |               |
-       - Dispatches Teardown -------------+---------------+
+     [ OpenTofu / tofu-bum ]  [ OpenTofu / tofu-bum ]     | (Idle Timeout
+     - Attaches Block Volume       - Destroy VM           |  Watchdog)
+     - Boots Cloud-Init Instance                          |
+     - Updates Dynamic DNS                                |
+                 |                                        |
+         (Server Running)                                 |
+                 |                                        |
+       [ Idle Watchdog Timer ]                            |
+       - Monitors RCON Players                            |
+       - Flushes World Chunks                             |
+       - Dispatches Teardown -----------------------------+
 
    ──────────────────────────────────────────────────────────────
    Independent CI/CD Lifecycle (Triggers on Code / Dependency Changes):

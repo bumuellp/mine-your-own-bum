@@ -51,10 +51,15 @@ init_preflight() {
 		done < <(echo "$DECRYPTED" | awk '
 			/^[a-zA-Z0-9_]+:[ \t]*.+/ {
 				sub(/^[a-zA-Z0-9_]+:[ \t]*/, "")
-				sub(/#.*$/, "")
 				gsub(/^[ \t]+|[ \t]+$/, "")
-				gsub(/^"|"$/, "")
-				gsub(/^\x27|\x27$/, "")
+				if (match($0, /^"[^"]*"/)) {
+					$0 = substr($0, 2, RLENGTH - 2)
+				} else if (match($0, /^\x27[^\x27]*\x27/)) {
+					$0 = substr($0, 2, RLENGTH - 2)
+				} else {
+					sub(/[ \t]+#.*$/, "")
+					gsub(/^[ \t]+|[ \t]+$/, "")
+				}
 				if (length($0) > 3) print
 			}
 		')
@@ -67,9 +72,15 @@ get_secret() {
 	echo "$DECRYPTED" | awk -v k="$key" '
 		$1 == k ":" {
 			sub(/^[^:]*:[ \t]*/, "")
-			sub(/#.*$/, "")
 			gsub(/^[ \t]+|[ \t]+$/, "")
-			gsub(/^"|"$/, "")
+			if (match($0, /^"[^"]*"/)) {
+				$0 = substr($0, 2, RLENGTH - 2)
+			} else if (match($0, /^\x27[^\x27]*\x27/)) {
+				$0 = substr($0, 2, RLENGTH - 2)
+			} else {
+				sub(/[ \t]+#.*$/, "")
+				gsub(/^[ \t]+|[ \t]+$/, "")
+			}
 			print
 			exit
 		}
@@ -85,9 +96,15 @@ get_setting() {
 		in_sec && /^[a-zA-Z]/ { in_sec=0 }
 		in_sec && $1 == k ":" {
 			sub(/^[^:]*:[ \t]*/, "")
-			sub(/#.*$/, "")
 			gsub(/^[ \t]+|[ \t]+$/, "")
-			gsub(/^"|"$/, "")
+			if (match($0, /^"[^"]*"/)) {
+				$0 = substr($0, 2, RLENGTH - 2)
+			} else if (match($0, /^\x27[^\x27]*\x27/)) {
+				$0 = substr($0, 2, RLENGTH - 2)
+			} else {
+				sub(/[ \t]+#.*$/, "")
+				gsub(/^[ \t]+|[ \t]+$/, "")
+			}
 			print
 			exit
 		}

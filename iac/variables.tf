@@ -12,6 +12,20 @@ variable "rcon_password" {
   default     = null
 }
 
+variable "auth_password" {
+  description = "In-game authentication password or PIN interpolated into rcon_startup_commands (leave empty or 'none' to disable)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "cf_api_key" {
+  description = "CurseForge API key for downloading curseforge_projects (can be supplied via SOPS or TF_VAR_cf_api_key)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 variable "github_pat" {
   description = "Scoped Personal Access Token for triggering GitHub Actions stop workflow from VM watchdog"
   type        = string
@@ -22,13 +36,19 @@ variable "github_pat" {
 variable "github_repository" {
   description = "GitHub repository (owner/repo) where the stop workflow is located"
   type        = string
-  default     = "bumuellp/mine-your-own-bum"
+  default     = null
 }
 
 variable "server_name" {
   description = "Server instance name"
   type        = string
   default     = "mine-your-own-bum"
+}
+
+variable "server_type" {
+  description = "Ephemeral Minecraft server type override (e.g. cax21, cax31, cpx31). Can be set via TF_VAR_server_type."
+  type        = string
+  default     = null
 }
 
 variable "state_encryption_passphrase" {

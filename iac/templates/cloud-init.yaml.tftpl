@@ -20,6 +20,7 @@ write_files:
       IDLE_TIMEOUT_MINUTES="${idle_timeout}"
       GITHUB_REPOSITORY="${github_repository}"
       GITHUB_PAT="${github_pat}"
+      GITHUB_API_VERSION="${github_api_version}"
 
   - path: /opt/minecraft/docker-compose.yml
     permissions: "0640"
@@ -36,6 +37,11 @@ write_files:
     owner: root:root
     content: ${jsonencode(bootstrap_script)}
 
+  - path: /usr/local/bin/prune-rclone-backups.sh
+    permissions: "0755"
+    owner: root:root
+    content: ${jsonencode(prune_script)}
+
   - path: /etc/systemd/system/mc-idle-watchdog.service
     permissions: "0644"
     owner: root:root
@@ -47,8 +53,10 @@ write_files:
     content: ${jsonencode(systemd_timer)}
 
 runcmd:
+  - iptables -I DOCKER-USER -d 169.254.169.254/32 -j DROP || true
   - localectl set-keymap "${keyboard_layout}" || loadkeys "${keyboard_layout}" || true
   - /usr/local/bin/bootstrap-volume.sh "${volume_id}" "/mnt/mc-data"
   - cd /opt/minecraft && docker compose up -d
+  - shred -u /var/lib/cloud/instance/user-data.txt* /var/lib/cloud/instances/*/user-data.txt* 2>/dev/null || true
   - systemctl daemon-reload
   - systemctl enable --now mc-idle-watchdog.timer

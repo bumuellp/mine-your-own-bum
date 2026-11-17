@@ -3,6 +3,16 @@ output "server_id" {
   value       = module.server.id
 }
 
+output "server_type" {
+  description = "Model of the ephemeral Minecraft compute instance in Hetzner Cloud"
+  value       = local.server_type
+}
+
+output "server_architecture" {
+  description = "CPU architecture of the ephemeral Minecraft compute instance in Hetzner Cloud"
+  value       = data.hcloud_server_type.server.architecture
+}
+
 output "server_ipv4" {
   description = "Public IPv4 address of the ephemeral Minecraft server"
   value       = module.server.ipv4_address

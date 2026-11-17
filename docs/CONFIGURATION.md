@@ -13,6 +13,9 @@ All operational, game, and infrastructure behaviors are configured via `config/s
 ---
 server:
   server_type: "cax21" # 4 vCPU ARM Ampere, 8 GB RAM (~€0.017/hour)
+  fallback_server_types: # Waterfall fallback if primary type is unavailable in location
+    - "cax31"
+    - "cpx32"
   location: "fsn1" # Falkenstein, Germany (or nbg1, hel1)
   volume_size_gb: 10 # Persistent Hetzner block volume (min 10 GB)
   always_on: false # When true, disables the idle auto-stop watchdog
@@ -26,7 +29,7 @@ server:
 minecraft:
   server_type: "FABRIC" # "FABRIC" (vanilla mechanics) or "PAPER"
   version: "26.3" # renovate: datasource=mojang-java
-  jvm_memory: "6G" # Java heap allocation (-Xmx)
+  jvm_memory: "5G" # Java heap allocation (-Xmx)
   motd: "Mine Your Own Bum" # Message of the day in server list
   max_players: 20 # Maximum simultaneous players
   difficulty: "normal" # peaceful, easy, normal, hard
@@ -43,8 +46,8 @@ minecraft:
     - "ferrite-core"
     - "krypton"
     - "carpet"
-    - "geyser"
-    - "floodgate"
+    - "geyser:beta" # Geyser continuous beta channel build
+    - "floodgate:beta" # Floodgate continuous beta channel build
   plugins: [] # Direct jar download URLs (for Paper servers)
 
 dns:
@@ -64,6 +67,14 @@ containers:
   minecraft_server: "itzg/minecraft-server:2026.10.0" # renovate: datasource=docker depName=itzg/minecraft-server
   backup: "itzg/mc-backup:2026.10.1" # renovate: datasource=docker depName=itzg/mc-backup
 
+packer:
+  arm_builder: "cax11" # Model used to build ARM golden image snapshot
+  x86_builder: "cpx12" # Model used to build x86 golden image snapshot (min 40GB disk)
+  fallback_locations: # Builder datacenter fallback order (snapshots are global)
+    - "fsn1"
+    - "nbg1"
+    - "hel1"
+
 discord:
   enabled: false # Deploy serverless Discord bot on Cloudflare Workers
   allowed_user_ids: [] # Restrict /mc-start, /mc-stop to specific Discord IDs
@@ -77,7 +88,8 @@ discord:
 
 | Parameter | Type | Default | Description |
 |---|:---:|:---:|---|
-| `server_type` | `string` | `"cax21"` | Hetzner Cloud VM model (e.g. `cax21`, `cpx22`, `cpx32`). `cax21` (4 vCPU ARM Ampere, 8 GB RAM) is recommended for smooth chunk generation and cost efficiency. |
+| `server_type` | `string` | `"cax21"` | Hetzner Cloud VM model (e.g. `cax21`, `cax31`, `cpx32`). `cax21` (4 vCPU ARM Ampere, 8 GB RAM) is recommended for smooth chunk generation and cost efficiency. |
+| `fallback_server_types` | `list` | `["cax31", "cpx32"]` | Ordered list of fallback machine models tested in preflight if `server_type` is unavailable in the datacenter location. |
 | `location` | `string` | `"fsn1"` | Hetzner datacenter location (`fsn1` = Falkenstein, `nbg1` = Nuremberg, `hel1` = Helsinki). *Note: Persistent volumes are currently available in EU regions.* |
 | `volume_size_gb` | `number` | `10` | Size of the persistent Hetzner block volume retaining Minecraft world data across shutdowns (minimum 10 GB). |
 | `always_on` | `bool` | `false` | When `true`, disables the auto-stop watchdog; the VM stays running until stopped manually via workflow. |
@@ -95,7 +107,7 @@ discord:
 |---|:---:|:---:|---|
 | `server_type` | `string` | `"FABRIC"` | Minecraft server implementation (`"FABRIC"` for 100% vanilla redstone/farm mechanics, or `"PAPER"`). |
 | `version` | `string` | `"26.3"` | Target Minecraft version (e.g. `"26.3"`, `"LATEST"`). Tracked automatically by Renovate via `# renovate: datasource=mojang-java`. |
-| `jvm_memory` | `string` | `"6G"` | Java heap memory allocation (`-Xmx`). Aikar's GC flags are applied automatically for optimal pause times. |
+| `jvm_memory` | `string` | `"5G"` | Java heap memory allocation (`-Xmx`). Aikar's GC flags are applied automatically for optimal pause times. |
 | `motd` | `string` | `"..."` | Message of the day displayed in the multiplayer server list. |
 | `max_players` | `number` | `20` | Maximum simultaneous players allowed. |
 | `difficulty` | `string` | `"normal"` | In-game difficulty (`peaceful`, `easy`, `normal`, `hard`). |
@@ -104,7 +116,7 @@ discord:
 | `whitelist_enabled` | `bool` | `true` | When `true`, enforces native player access control. Unauthorized players cannot connect. See [Player Management Guide](PLAYER_MANAGEMENT.md). |
 | `whitelist` | `list` | `[...]` | Whitelisted players. Java players use username (e.g. `"Steve"`). Bedrock players use Floodgate UUIDs (e.g. `"00000000-0000-0000-xxxx-xxxxxxxxxxxx"` derived from Xbox XUID). |
 | `ops` | `list` | `[...]` | Server operators granted permission level 4 (`/gamemode`, `/fwhitelist`, `/kick`, etc.). Format matches `whitelist`. |
-| `modrinth_projects` | `list` | `[...]` | Fabric mods resolved and downloaded from Modrinth automatically on boot (e.g. `fabric-api`, `lithium`, `carpet`, `geyser`, `floodgate`). |
+| `modrinth_projects` | `list` | `[...]` | Fabric mods resolved and downloaded from Modrinth automatically on boot. Individual release channels or versions can be specified using `slug:channel` (e.g. `geyser:beta`, `floodgate:beta`) or pinned versions (`slug:version`). Unqualified mods default to stable `release`. |
 | `plugins` | `list` | `[]` | HTTP/HTTPS direct download URLs for jar plugins (primarily for Paper servers or standalone jars). |
 
 ---
@@ -144,6 +156,16 @@ discord:
 |---|:---:|:---:|---|
 | `minecraft_server` | `string` | `"itzg/minecraft-server:2026.10.0"` | Docker image tag for the Minecraft server container. Tracked and updated automatically by Renovate. |
 | `backup` | `string` | `"itzg/mc-backup:2026.10.1"` | Docker image tag for the Rclone backup sidecar container. Tracked and updated automatically by Renovate. |
+
+---
+
+### `packer`
+
+| Parameter | Type | Default | Description |
+|---|:---:|:---:|---|
+| `arm_builder` | `string` | `"cax11"` | Hetzner Cloud VM model used to build the ARM64 golden image snapshot. |
+| `x86_builder` | `string` | `"cpx12"` | Hetzner Cloud VM model used to build the x86_64 golden image snapshot (requires 40GB disk). |
+| `fallback_locations` | `list` | `["fsn1", "nbg1", "hel1"]` | Datacenter locations evaluated in priority order for building snapshots (snapshots are project-global). |
 
 ---
 

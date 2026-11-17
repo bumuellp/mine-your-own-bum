@@ -284,7 +284,7 @@ To re-register slash commands through CI:
 
 | Command | Description | Behavior & Protections |
 |---|---|---|
-| `/mc-status` | Report real-time server and workflow status | Performs direct TCP ping on port 25565. Queries GitHub Actions API for active provisioning or teardown runs. |
+| `/mc-status` | Report real-time server and workflow status | Performs direct TCP ping on port 25565, retrieving the active IP and direct connect workaround for DNS cache delays. Queries GitHub Actions API for active provisioning or teardown runs. |
 | `/mc-start` | Provision VM & start server | Pings TCP 25565 first; if already online, informs caller without booting duplicate VM. If offline, dispatches `server-start.yml`. |
 | `/mc-stop` | Gracefully save world & shut down VM | Checks if server is online; if running, dispatches `server-stop.yml` to save chunks, backup to S3/R2, and destroy the VM. |
 
