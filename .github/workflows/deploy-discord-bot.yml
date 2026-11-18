@@ -58,15 +58,9 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Rust Toolchain
-        uses: bumuellp/lights-camera-bum-action/setup-rust@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
-        with:
-          install-worker-build: true
-          workspaces: integrations/discord-bot
-
       - name: Parse Settings
         id: cfg
-        uses: bumuellp/lights-camera-bum-action/parse-config@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
+        uses: bumuellp/lights-camera-bum-action/parse-config@804d7c536c5de1bbf5d39e860638ea606172d39e # v1.12.0
         with:
           file: config/settings.yaml
           fallback-file: config/settings.example.yaml
@@ -81,7 +75,7 @@ jobs:
 
       - name: Decrypt Secrets (SOPS)
         id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@804d7c536c5de1bbf5d39e860638ea606172d39e # v1.12.0
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
@@ -101,13 +95,25 @@ jobs:
         run: >-
           echo "::notice ::Discord bot disabled in settings or Cloudflare credentials missing. Skipping deployment."
 
+      - name: Setup Rust Toolchain
+        if: |
+          fromJSON(steps.cfg.outputs.json)['discord.enabled'] == 'true' &&
+          (env.CF_API_TOKEN != '' ||
+           (fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != '' &&
+            fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != null))
+        uses: bumuellp/lights-camera-bum-action/setup-rust@804d7c536c5de1bbf5d39e860638ea606172d39e # v1.12.0
+        with:
+          targets: wasm32-unknown-unknown
+          install-worker-build: true
+          workspaces: integrations/discord-bot
+
       - name: Deploy Worker via Cloudflare Action
         if: |
           fromJSON(steps.cfg.outputs.json)['discord.enabled'] == 'true' &&
           (env.CF_API_TOKEN != '' ||
            (fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != '' &&
             fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != null))
-        uses: bumuellp/lights-camera-bum-action/deploy-worker@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
+        uses: bumuellp/lights-camera-bum-action/deploy-worker@804d7c536c5de1bbf5d39e860638ea606172d39e # v1.12.0
         with:
           api-token: ${{ env.CF_API_TOKEN || fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] }}
           working-directory: integrations/discord-bot
@@ -157,7 +163,7 @@ jobs:
 
       - name: Decrypt Discord Bot Secrets (SOPS)
         id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@804d7c536c5de1bbf5d39e860638ea606172d39e # v1.12.0
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
