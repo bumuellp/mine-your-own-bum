@@ -64,6 +64,14 @@ jobs:
         with:
           version: 'v1.16.2'
 
+      - name: Cache Packer Plugins
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.packer.d/plugins
+          key: packer-plugins-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packer/*.pkr.hcl') }}
+          restore-keys: |
+            packer-plugins-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Initialize Packer Plugins
         run: packer init packer/minecraft.pkr.hcl
 

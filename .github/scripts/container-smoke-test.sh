@@ -31,6 +31,9 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> Step 1: Rendering Docker Compose & Cloud-Init specifications via OpenTofu..."
+if [ -n "${TF_PLUGIN_CACHE_DIR:-}" ]; then
+	mkdir -p "$TF_PLUGIN_CACHE_DIR"
+fi
 tofu -chdir=tests/smoke-test init -input=false >/dev/null
 tofu -chdir=tests/smoke-test apply -auto-approve -input=false >/dev/null
 tofu -chdir=tests/smoke-test output -raw docker_compose >"$COMPOSE_FILE"

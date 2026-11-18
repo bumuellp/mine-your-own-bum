@@ -47,5 +47,15 @@ jobs:
         with:
           tofu_version_file: .tofu-version
 
+      - name: Cache OpenTofu Provider Plugins
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/tofu-plugin-cache
+          key: tofu-smoke-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/smoke-test/*.tf', '.tofu-version') }}
+          restore-keys: |
+            tofu-smoke-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Run Container Smoke Test
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/tofu-plugin-cache
         run: .github/scripts/container-smoke-test.sh
