@@ -1,5 +1,5 @@
-# syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.6.1 AS xx
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.10.0@sha256:40fe21f44bb8cddf1eb1226db190d0a984118f62ee02a91b77d99448d28264a6 AS xx
 
 FROM --platform=$BUILDPLATFORM rust:1.99-alpine3.21 AS builder
 ARG TARGETPLATFORM
@@ -30,7 +30,7 @@ RUN TARGET="$(xx-cargo --print-target-triple)" && \
     xx-cargo build --release --locked && \
     cp "target/$TARGET/release/mc-agent" /build/mc-agent
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 COPY --from=builder /build/mc-agent /mc-agent
 USER 65532:65532
 EXPOSE 8080
