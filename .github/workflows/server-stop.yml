@@ -37,7 +37,7 @@ jobs:
 
       - name: Decrypt Secrets
         id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
@@ -51,7 +51,7 @@ jobs:
             hcloud_token
 
       - name: Initialize OpenTofu Backend
-        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
+        uses: bumuellp/lights-camera-bum-action/setup-tofu-backend@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
         with:
           working-directory: iac
           bucket: ${{ fromJSON(steps.sec.outputs.json).s3_bucket }}
@@ -69,7 +69,7 @@ jobs:
 
       - name: Delete DNS IPv4 Record
         if: steps.dns_cfg.outputs.enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
         with:
           provider: ${{ steps.dns_cfg.outputs.provider }}
           token: ${{ steps.dns_cfg.outputs.dns_token }}
@@ -80,7 +80,7 @@ jobs:
 
       - name: Delete DNS IPv6 Record
         if: steps.dns_cfg.outputs.enabled == 'true'
-        uses: bumuellp/lights-camera-bum-action/sync-dns-record@e13ffa1fb937ece0ff0fb24c0d9b538b80c3de2e # v1.11.1
+        uses: bumuellp/lights-camera-bum-action/sync-dns-record@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
         with:
           provider: ${{ steps.dns_cfg.outputs.provider }}
           token: ${{ steps.dns_cfg.outputs.dns_token }}
