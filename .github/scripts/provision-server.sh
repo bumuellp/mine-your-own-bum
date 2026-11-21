@@ -17,11 +17,11 @@ if tofu state list module.server.hcloud_server.this >/dev/null 2>&1; then
 	ALREADY_RUNNING=true
 	echo "Minecraft server instance is already running in remote state."
 else
-	# Ensure persistent storage volume exists before provisioning compute and attachments
-	if ! tofu state list module.volume.hcloud_volume.this >/dev/null 2>&1; then
-		echo "Persistent volume not found in remote state; creating volume first..."
-		tofu apply -target=module.volume -auto-approve
-	fi
+	# Always reconcile persistent storage volume first (handles initial creation,
+	# size increases, or out-of-band volume deletion in Hetzner Cloud Console
+	# before planning module.server volume attachments).
+	echo "Reconciling persistent storage volume..."
+	tofu apply -target=module.volume -auto-approve
 	tofu apply -auto-approve
 fi
 
