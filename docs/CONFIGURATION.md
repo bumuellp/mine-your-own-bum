@@ -14,6 +14,7 @@ All operational, game, and infrastructure behaviors are configured via `config/s
 server:
   server_type: "cax21" # 4 vCPU ARM Ampere, 8 GB RAM (~€0.017/hour)
   fallback_server_types: # Waterfall fallback if primary type is unavailable in location
+    - "cx33"
     - "cax31"
     - "cpx32"
   location: "fsn1" # Falkenstein, Germany (or nbg1, hel1)
@@ -95,8 +96,8 @@ discord:
 
 | Parameter | Type | Default | Description |
 |---|:---:|:---:|---|
-| `server_type` | `string` | `"cax21"` | Hetzner Cloud VM model (e.g. `cax21`, `cax31`, `cpx32`). `cax21` (4 vCPU ARM Ampere, 8 GB RAM) is recommended for smooth chunk generation and cost efficiency. |
-| `fallback_server_types` | `list` | `["cax31", "cpx32"]` | Ordered list of fallback machine models tested in preflight if `server_type` is unavailable in the datacenter location. |
+| `server_type` | `string` | `"cax21"` | Hetzner Cloud VM model (e.g. `cax21`, `cx33`, `cax31`, `cpx32`). `cax21` (4 vCPU ARM Ampere, 8 GB RAM) is recommended for smooth chunk generation and cost efficiency. |
+| `fallback_server_types` | `list` | `["cx33", "cax31", "cpx32"]` | Ordered list of fallback machine models tested in preflight if `server_type` is unavailable in the datacenter location. |
 | `location` | `string` | `"fsn1"` | Hetzner datacenter location (`fsn1` = Falkenstein, `nbg1` = Nuremberg, `hel1` = Helsinki). *Note: Persistent volumes are currently available in EU regions.* |
 | `volume_size_gb` | `number` | `10` | Size of the persistent Hetzner block volume retaining Minecraft world data across shutdowns (minimum 10 GB). |
 | `always_on` | `bool` | `false` | When `true`, disables the auto-stop watchdog; the VM stays running until stopped manually via workflow. |

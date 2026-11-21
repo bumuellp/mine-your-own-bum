@@ -74,7 +74,7 @@ variable "server_name" {
 }
 
 variable "server_type" {
-  description = "Ephemeral Minecraft server type override (e.g. cax21, cax31, cpx31). Can be set via TF_VAR_server_type."
+  description = "Ephemeral Minecraft server type override (e.g. cax21, cx33, cax31, cpx32). Can be set via TF_VAR_server_type."
   type        = string
   default     = null
 }
