@@ -133,6 +133,7 @@ jobs:
             CHAT_CHANNEL_ID
             MC_SERVER_TYPE
             MC_VERSION
+            MC_MODLOADER
             MC_MODRINTH_MODPACK
             MC_CLIENT_REQUIRED_MODS
             MC_CLIENT_OPTIONAL_MODS
@@ -160,6 +161,7 @@ jobs:
           CHAT_CHANNEL_ID: ${{ fromJSON(steps.cfg.outputs.json)['discord.chat_channel_id'] || '' }}
           MC_SERVER_TYPE: ${{ fromJSON(steps.cfg.outputs.json)['minecraft.server_type'] || 'FABRIC' }}
           MC_VERSION: ${{ fromJSON(steps.cfg.outputs.json)['minecraft.version'] || '' }}
+          MC_MODLOADER: ${{ steps.mods.outputs.modloader || '' }}
           MC_MODRINTH_MODPACK: ${{ fromJSON(steps.cfg.outputs.json)['minecraft.modrinth_modpack'] || '' }}
           MC_CLIENT_REQUIRED_MODS: ${{ steps.mods.outputs.client_required_mods || '' }}
           MC_CLIENT_OPTIONAL_MODS: ${{ steps.mods.outputs.client_optional_mods || '' }}

@@ -24,10 +24,10 @@ pub fn format_mods_hint(cfg: &ModConfig) -> String {
 
 /// Formats the full `/mc-mods` response with loader, version, clickable Modrinth/CurseForge URLs, optional/server mods, and launcher slugs.
 pub fn format_mods_message(cfg: &ModConfig) -> String {
-    let loader = if cfg.server_type.trim().is_empty() {
-        "FABRIC"
-    } else {
-        cfg.server_type.trim()
+    let (loader_name, loader_url) = cfg.loader_display_and_url();
+    let loader_display = match loader_url {
+        Some(url) => format!("[{loader_name}](<{url}>)"),
+        None => format!("`{loader_name}`"),
     };
     let ver = if cfg.mc_version.trim().is_empty() {
         "LATEST"
@@ -37,7 +37,7 @@ pub fn format_mods_message(cfg: &ModConfig) -> String {
 
     let mut out = format!(
         "📦 **Client Setup & Mods (`/mc-mods`)**\n\
-         • **Server Type / Loader:** `{loader}` (Minecraft `{ver}`)\n"
+         • **Modloader:** {loader_display} (Minecraft `{ver}`)\n"
     );
 
     let mut slugs_for_copy = Vec::new();
@@ -158,6 +158,19 @@ pub fn format_status_message(
              👉 Use `/mc-start` to boot the server (~90s)."
         ),
     }
+}
+
+/// Format real-time server status when the VM & `mc-agent` are online but Minecraft port 25565 is not accepting connections yet.
+pub fn format_status_initializing_message(fqdn: &str, stats: &AgentSystem) -> String {
+    let hours = stats.uptime_seconds / 3600;
+    let mins = (stats.uptime_seconds % 3600) / 60;
+    format!(
+        "⏳ **Minecraft Server is INITIALIZING / RECOVERING...**\n\
+         🖥️ The cloud VM and sidecar agent are **ONLINE** (Host RAM: `{} MB / {} MB`, Uptime: `{}h {}m`), but Minecraft is not accepting connections on port `25565` yet.\n\
+         🌐 **Target Address:** `{fqdn}`\n\
+         📜 Run `/mc-logs` to check mod loading / startup progress, or `/mc-top` for live telemetry.",
+        stats.mem_used_mb, stats.mem_total_mb, hours, mins
+    )
 }
 
 /// Format response when `/mc-start` is called but the server is already online
@@ -290,6 +303,10 @@ pub fn format_agent_error(err: &AgentError, command_channel_id: &str) -> String 
                 format!("Run `/mc-start` in <#{command_channel_id}> to boot it.")
             };
             format!("⚫ **Server is currently offline.** {start_hint}")
+        }
+        AgentError::ServerStarting(_) => {
+            "⏳ **VM & Sidecar Agent are ONLINE**, but the Minecraft server is still starting or restarting (RCON not ready yet).\n\
+             📜 Run `/mc-logs` to inspect boot progress.".to_string()
         }
         AgentError::Unauthorized => {
             "🔒 **Agent authentication failed:** `AGENT_SHARED_SECRET` does not match `mc-agent`.".to_string()

@@ -91,6 +91,15 @@ locals {
   backup_image      = local.settings.containers.backup
   mc_agent_image    = try(local.settings.containers.mc_agent, "ghcr.io/bumuellp/mc-agent:0.1.0")
   cloudflared_image = try(local.settings.containers.cloudflared, "cloudflare/cloudflared:2026.3.0")
+
+  # Derive container cgroup mem_limit from jvm_memory with ~1680m headroom for JVM non-heap & native libs
+  jvm_mem_norm = upper(trimspace(local.settings.minecraft.jvm_memory))
+  jvm_mem_mb = endswith(local.jvm_mem_norm, "G") ? (
+    tonumber(trimsuffix(local.jvm_mem_norm, "G")) * 1024
+    ) : (
+    endswith(local.jvm_mem_norm, "M") ? tonumber(trimsuffix(local.jvm_mem_norm, "M")) : 4096
+  )
+  mc_mem_limit = "${local.jvm_mem_mb + 1680}m"
 }
 
 data "hcloud_server_type" "server" {
@@ -165,6 +174,7 @@ locals {
     server_type                 = local.settings.minecraft.server_type
     minecraft_version           = local.settings.minecraft.version
     jvm_memory                  = local.settings.minecraft.jvm_memory
+    mc_mem_limit                = local.mc_mem_limit
     motd                        = local.settings.minecraft.motd
     max_players                 = local.settings.minecraft.max_players
     difficulty                  = local.settings.minecraft.difficulty

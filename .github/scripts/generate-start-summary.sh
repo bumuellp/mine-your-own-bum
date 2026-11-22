@@ -48,6 +48,27 @@ if echo "$MC_MODRINTH_LIST" | grep -qiE '^geyser(:|$)'; then
 	HAS_GEYSER="true"
 fi
 
+CLIENT_REQ_CSV=""
+CLIENT_OPT_CSV=""
+SERVER_ONLY_CSV=""
+RESOLVED_LOADER=""
+while IFS='=' read -r k v; do
+	case "$k" in
+	CLIENT_REQUIRED_MODS) CLIENT_REQ_CSV="$v" ;;
+	CLIENT_OPTIONAL_MODS) CLIENT_OPT_CSV="$v" ;;
+	SERVER_ONLY_MODS) SERVER_ONLY_CSV="$v" ;;
+	MC_MODLOADER) RESOLVED_LOADER="$v" ;;
+	esac
+done < <(SETTINGS_FILE="$SETTINGS_FILE" "${REPO_ROOT}/scripts/resolve-modrinth-sides.sh")
+
+LOADER_DISPLAY="\`${MC_SERVER_TYPE}\`"
+case "${RESOLVED_LOADER,,}" in
+neoforge) LOADER_DISPLAY="[NeoForge](https://neoforged.net/)" ;;
+fabric) LOADER_DISPLAY="[Fabric](https://fabricmc.net/use/installer/)" ;;
+forge) LOADER_DISPLAY="[Forge](https://files.minecraftforge.net/)" ;;
+quilt) LOADER_DISPLAY="[Quilt](https://quiltmc.org/en/install/)" ;;
+esac
+
 TABLE_ROWS=(
 	"| **Domain / FQDN** | \`${DISPLAY_DOMAIN}\` |"
 	"| **Java Edition** | \`${JAVA_HOST}:25565\` |"
@@ -55,7 +76,7 @@ TABLE_ROWS=(
 if [ "$HAS_GEYSER" = "true" ]; then
 	TABLE_ROWS+=("| **Bedrock Edition** | \`${BEDROCK_HOST}:19132\` (Port: \`19132\`) |")
 fi
-TABLE_ROWS+=("| **Server Loader & Version** | \`${MC_SERVER_TYPE}\` (Minecraft \`${MC_VERSION}\`) |")
+TABLE_ROWS+=("| **Server Loader & Version** | ${LOADER_DISPLAY} (Minecraft \`${MC_VERSION}\`) |")
 if [ -n "$SERVER_TYPE_VAL" ]; then
 	TABLE_ROWS+=("| **Server Model** | \`${SERVER_TYPE_VAL}\` (\`${SERVER_ARCH_VAL}\`) |")
 fi
@@ -64,17 +85,6 @@ if [ -n "$IPV6" ]; then
 	TABLE_ROWS+=("| **IPv6 Address** | \`${IPV6}\` |")
 fi
 CONNECTION_TABLE="$(printf '%s\n' "${TABLE_ROWS[@]}")"
-
-CLIENT_REQ_CSV=""
-CLIENT_OPT_CSV=""
-SERVER_ONLY_CSV=""
-while IFS='=' read -r k v; do
-	case "$k" in
-	CLIENT_REQUIRED_MODS) CLIENT_REQ_CSV="$v" ;;
-	CLIENT_OPTIONAL_MODS) CLIENT_OPT_CSV="$v" ;;
-	SERVER_ONLY_MODS) SERVER_ONLY_CSV="$v" ;;
-	esac
-done < <(SETTINGS_FILE="$SETTINGS_FILE" "${REPO_ROOT}/scripts/resolve-modrinth-sides.sh")
 
 CLIENT_MOD_LINES=()
 if [ -n "$MC_MODPACK" ]; then

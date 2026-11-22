@@ -17,6 +17,7 @@ pub struct PingResult {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ModConfig {
     pub server_type: String,
+    pub modloader: String,
     pub mc_version: String,
     pub modrinth_modpack: String,
     pub client_required_mods: String,
@@ -62,6 +63,33 @@ impl ModConfig {
         !self.modrinth_modpack.trim().is_empty()
             || !self.required_modrinth_mods().is_empty()
             || !self.client_curseforge_mods().is_empty()
+    }
+
+    /// Returns the human-readable modloader name and official download URL (if applicable).
+    pub fn loader_display_and_url(&self) -> (String, Option<&'static str>) {
+        let raw = if !self.modloader.trim().is_empty() {
+            self.modloader.trim()
+        } else {
+            self.server_type.trim()
+        };
+        match raw.to_ascii_lowercase().as_str() {
+            "neoforge" | "neoforged" => ("NeoForge".to_string(), Some("https://neoforged.net/")),
+            "fabric" => (
+                "Fabric".to_string(),
+                Some("https://fabricmc.net/use/installer/"),
+            ),
+            "forge" => (
+                "Forge".to_string(),
+                Some("https://files.minecraftforge.net/"),
+            ),
+            "quilt" => ("Quilt".to_string(), Some("https://quiltmc.org/en/install/")),
+            "vanilla" => ("Vanilla".to_string(), None),
+            "" => (
+                "FABRIC".to_string(),
+                Some("https://fabricmc.net/use/installer/"),
+            ),
+            _ => (raw.to_string(), None),
+        }
     }
 
     /// Returns `true` if Geyser is present (or when no mod config was injected, preserving default crossplay display).

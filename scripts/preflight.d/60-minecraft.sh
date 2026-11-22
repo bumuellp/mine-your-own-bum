@@ -180,3 +180,37 @@ elif [ "${PREFLIGHT_SKIP_MODRINTH_API:-false}" != "true" ] && command -v curl >/
 else
 	echo -e "${GREEN}[✓] Minecraft Modrinth:${NC} Dynamic mod definitions validated (channel/version specified for continuous builds)."
 fi
+
+# Validate JVM heap sizing against host RAM of configured server_type via Hetzner Cloud API
+SERVER_MODEL="${TF_VAR_server_type:-$(get_setting "server" "server_type" || echo "")}"
+JVM_MEM_RAW="$(get_setting "minecraft" "jvm_memory" || echo "")"
+HCLOUD_TOKEN_VAL="$(get_secret "hcloud_token" || echo "")"
+if [ -n "$SERVER_MODEL" ] && [ -n "$JVM_MEM_RAW" ] && [ -n "$HCLOUD_TOKEN_VAL" ] && [[ "$HCLOUD_TOKEN_VAL" != *"YOUR_"* ]] && command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+	JVM_NORM="$(echo "$JVM_MEM_RAW" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+	JVM_MB=""
+	if [[ "$JVM_NORM" =~ ^([0-9]+)G$ ]]; then
+		JVM_MB=$((BASH_REMATCH[1] * 1024))
+	elif [[ "$JVM_NORM" =~ ^([0-9]+)M$ ]]; then
+		JVM_MB="${BASH_REMATCH[1]}"
+	fi
+
+	HOST_RAM_MB=""
+	TYPE_RESP="$(curl -s --max-time 5 -H "Authorization: Bearer ${HCLOUD_TOKEN_VAL}" "https://api.hetzner.cloud/v1/server_types?name=${SERVER_MODEL}" || echo "")"
+	if [ -n "$TYPE_RESP" ]; then
+		HOST_RAM_GB="$(echo "$TYPE_RESP" | jq -r '.server_types[0].memory // empty' 2>/dev/null || true)"
+		if [ -n "$HOST_RAM_GB" ]; then
+			HOST_RAM_MB="$(awk -v gb="$HOST_RAM_GB" 'BEGIN { printf "%.0f", gb * 1024 }')"
+		fi
+	fi
+
+	if [ -n "$JVM_MB" ] && [ -n "$HOST_RAM_MB" ] && [ "$HOST_RAM_MB" -gt 0 ]; then
+		# Reserve ~3 GB for JVM non-heap/native libs (~1.7 GB) + sidecars (mc-backup/mc-agent/cloudflared ~700 MB) + OS
+		MAX_SAFE_JVM_MB=$((HOST_RAM_MB - 3072))
+		if [ "$JVM_MB" -gt "$MAX_SAFE_JVM_MB" ]; then
+			echo -e "${RED}[✗] Minecraft Memory:${NC} 'jvm_memory' (${JVM_MEM_RAW} = ${JVM_MB} MB) is too large for '${SERVER_MODEL}' (${HOST_RAM_MB} MB RAM) and risks Linux/cgroup OOM kills. Set 'jvm_memory' <= $((MAX_SAFE_JVM_MB / 1024))G (or <= ${MAX_SAFE_JVM_MB}M) or upgrade 'server_type'."
+			ALL_OK=1
+		else
+			echo -e "${GREEN}[✓] Minecraft Memory:${NC} 'jvm_memory' (${JVM_MEM_RAW}) fits safely within '${SERVER_MODEL}' (${HOST_RAM_MB} MB RAM)."
+		fi
+	fi
+fi

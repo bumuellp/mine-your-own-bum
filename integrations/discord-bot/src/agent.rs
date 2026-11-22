@@ -8,6 +8,7 @@ use worker::{Fetcher, Headers, Method, Request, RequestInit};
 pub enum AgentError {
     NotConfigured,
     Offline,
+    ServerStarting(String),
     Unauthorized,
     BadRequest(String),
     HttpError(u16, String),
@@ -96,7 +97,16 @@ async fn agent_request(
                 .unwrap_or(text);
             Err(AgentError::BadRequest(msg))
         }
-        502 | 503 | 504 | 530 => Err(AgentError::Offline),
+        502 | 503 => {
+            if let Ok(err_body) = serde_json::from_str::<AgentErrorBody>(&text)
+                && !err_body.error.trim().is_empty()
+            {
+                Err(AgentError::ServerStarting(err_body.error))
+            } else {
+                Err(AgentError::Offline)
+            }
+        }
+        504 | 530 => Err(AgentError::Offline),
         _ => Err(AgentError::HttpError(status, text)),
     }
 }

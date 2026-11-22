@@ -16,6 +16,7 @@ locals {
     server_type                 = local.baseline_settings.minecraft.server_type
     minecraft_version           = local.baseline_settings.minecraft.version
     jvm_memory                  = "2G"
+    mc_mem_limit                = "3728m"
     motd                        = local.baseline_settings.minecraft.motd
     max_players                 = local.baseline_settings.minecraft.max_players
     difficulty                  = local.baseline_settings.minecraft.difficulty
@@ -58,6 +59,7 @@ locals {
     server_type                 = local.active_settings.minecraft.server_type
     minecraft_version           = local.active_settings.minecraft.version
     jvm_memory                  = "4G"
+    mc_mem_limit                = "5776m"
     motd                        = local.active_settings.minecraft.motd
     max_players                 = local.active_settings.minecraft.max_players
     difficulty                  = local.active_settings.minecraft.difficulty
@@ -100,6 +102,7 @@ locals {
     server_type                 = "MODRINTH"
     minecraft_version           = "1.21.1"
     jvm_memory                  = "4G"
+    mc_mem_limit                = "5776m"
     motd                        = "Smoke Test Synthetic Matrix"
     max_players                 = 10
     difficulty                  = "normal"

@@ -4,7 +4,7 @@ use super::client::update_deferred_response;
 use super::format::{
     format_agent_error, format_already_running_message, format_blocked_action, format_logs_message,
     format_mods_hint, format_mods_message, format_players_message, format_rcon_output,
-    format_status_message, format_system_message,
+    format_status_initializing_message, format_status_message, format_system_message,
 };
 use super::models::{CommandData, option_str_from};
 use crate::agent::{
@@ -284,6 +284,15 @@ async fn handle_status_with<B: CommandBackend>(ctx: &CommandContext, backend: &B
         backend.active_workflow(&ctx.owner, &ctx.repo, &ctx.pat),
     )
     .await;
+
+    if active_workflow.is_none()
+        && !ping_result.is_online
+        && let Ok(sys) = backend.agent_system().await
+    {
+        let msg = format_status_initializing_message(&ctx.fqdn, &sys);
+        backend.respond(&ctx.app_id, &ctx.token, &msg).await;
+        return;
+    }
 
     let direct_ip = resolve_direct_ip(&ping_result, &ctx.fqdn, backend).await;
 
@@ -670,6 +679,7 @@ mod tests {
         // 1. Default / Server-only + Optional mods -> no client mods required to join, but lists optional & server-only
         ctx.mod_config = ModConfig {
             server_type: "FABRIC".to_string(),
+            modloader: "fabric".to_string(),
             mc_version: "26.3".to_string(),
             modrinth_modpack: String::new(),
             client_required_mods: String::new(),
@@ -687,12 +697,14 @@ mod tests {
         assert!(fabric_reply.contains("No client mods required to join"));
         assert!(fabric_reply.contains("Optional Client Mods"));
         assert!(fabric_reply.contains("https://modrinth.com/mod/lithium"));
+        assert!(fabric_reply.contains("https://fabricmc.net/use/installer/"));
         assert!(fabric_reply.contains("Server-Only Mods"));
         assert!(fabric_reply.contains("`geyser:beta`"));
 
         // 2. Modpack + required client mods + server-only neologin
         ctx.mod_config = ModConfig {
             server_type: "MODRINTH".to_string(),
+            modloader: "neoforge".to_string(),
             mc_version: "1.21.1".to_string(),
             modrinth_modpack: "create-combined:beta".to_string(),
             client_required_mods: "mekanism,ae2,pipez:beta".to_string(),
@@ -707,6 +719,7 @@ mod tests {
         ))
         .unwrap();
         let mods_reply = backend.responses.borrow().last().unwrap().clone();
+        assert!(mods_reply.contains("https://neoforged.net/"));
         assert!(mods_reply.contains("https://modrinth.com/modpack/create-combined"));
         assert!(mods_reply.contains("https://modrinth.com/mod/mekanism"));
         assert!(mods_reply.contains("https://www.curseforge.com/minecraft/mc-mods/projecte"));
@@ -1004,6 +1017,48 @@ mod tests {
         let msg = backend.responses.borrow()[0].clone();
         assert!(msg.contains("currently offline"));
         assert!(msg.contains("<#100200300>"));
+    }
+
+    #[test]
+    fn test_agent_starting_and_status_initializing_responses() {
+        let ctx = test_ctx();
+        let mut backend = MockBackend::new();
+        backend.players_result = Err(AgentError::ServerStarting(
+            "RCON connection refused".to_string(),
+        ));
+
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Players,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
+        let players_msg = backend.responses.borrow()[0].clone();
+        assert!(players_msg.contains("VM & Sidecar Agent are ONLINE"));
+        assert!(players_msg.contains("/mc-logs"));
+
+        // When Minecraft port is closed and no workflow is running, but mc-agent responds,
+        // /mc-status should report INITIALIZING / RECOVERING instead of OFFLINE.
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Status,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
+        let status_msg = backend.responses.borrow()[1].clone();
+        assert!(status_msg.contains("INITIALIZING / RECOVERING"));
+        assert!(status_msg.contains("4000 MB / 8000 MB"));
+
+        // When mc-agent is also offline, /mc-status reports OFFLINE.
+        backend.system_result = Err(AgentError::Offline);
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Status,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
+        let offline_msg = backend.responses.borrow()[2].clone();
+        assert!(offline_msg.contains("OFFLINE"));
     }
 
     #[test]

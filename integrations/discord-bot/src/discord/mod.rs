@@ -154,6 +154,7 @@ pub async fn handle_interaction(mut req: Request, env: Env, ctx: Context) -> Res
         let caller_name = interaction.caller_display_name();
         let mod_config = ModConfig {
             server_type: optional_var(&env, "MC_SERVER_TYPE"),
+            modloader: optional_var(&env, "MC_MODLOADER"),
             mc_version: optional_var(&env, "MC_VERSION"),
             modrinth_modpack: optional_var(&env, "MC_MODRINTH_MODPACK"),
             client_required_mods: optional_var(&env, "MC_CLIENT_REQUIRED_MODS"),
