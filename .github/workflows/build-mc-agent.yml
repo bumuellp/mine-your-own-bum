@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup, Lint & Test Rust Crate
-        uses: bumuellp/lights-camera-bum-action/setup-rust@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
+        uses: bumuellp/lights-camera-bum-action/setup-rust@34fd1ec3bc1c86211628dd1a8ba7cbd7da0a9594 # v1.15.1
         with:
           components: clippy, rustfmt
           workspaces: integrations/mc-agent
@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build and Push ghcr.io/bumuellp/mc-agent
-        uses: bumuellp/lights-camera-bum-action/build-ghcr-image@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
+        uses: bumuellp/lights-camera-bum-action/build-ghcr-image@34fd1ec3bc1c86211628dd1a8ba7cbd7da0a9594 # v1.15.1
         with:
           context: integrations/mc-agent
           dockerfile: integrations/mc-agent/Dockerfile

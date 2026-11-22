@@ -28,6 +28,8 @@ cleanup() {
 		if [ -n "${GITHUB_ACTIONS:-}" ]; then
 			# Preserve downloaded mods, libraries, and patched loader jars for actions/cache
 			sudo rm -rf "${MOUNT_DIR}/world"* "${MOUNT_DIR}/logs" "${MOUNT_DIR}/backups" "${MOUNT_DIR}/"*.lock 2>/dev/null || true
+			sudo chown -R "$(id -u):$(id -g)" "$MOUNT_DIR" 2>/dev/null || true
+			sudo chmod -R u+rwX "$MOUNT_DIR" 2>/dev/null || true
 		else
 			sudo rm -rf "$MOUNT_DIR" 2>/dev/null || rm -rf "$MOUNT_DIR" 2>/dev/null || true
 		fi

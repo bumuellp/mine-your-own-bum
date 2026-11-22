@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup, Lint & Test Rust Crate
-        uses: bumuellp/lights-camera-bum-action/setup-rust@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
+        uses: bumuellp/lights-camera-bum-action/setup-rust@34fd1ec3bc1c86211628dd1a8ba7cbd7da0a9594 # v1.15.1
         with:
           components: clippy, rustfmt
           workspaces: integrations/discord-bot
@@ -56,7 +56,7 @@ jobs:
 
       - name: Parse Settings
         id: cfg
-        uses: bumuellp/lights-camera-bum-action/parse-config@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
+        uses: bumuellp/lights-camera-bum-action/parse-config@34fd1ec3bc1c86211628dd1a8ba7cbd7da0a9594 # v1.15.1
         with:
           file: config/settings.yaml
           fallback-file: config/settings.example.yaml
@@ -76,7 +76,7 @@ jobs:
 
       - name: Decrypt Secrets (SOPS)
         id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@34fd1ec3bc1c86211628dd1a8ba7cbd7da0a9594 # v1.15.1
         with:
           age-key: ${{ secrets.SOPS_AGE_KEY }}
           file: config/secrets.enc.yaml
@@ -108,7 +108,7 @@ jobs:
           (env.CF_API_TOKEN != '' ||
            (fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != '' &&
             fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != null))
-        uses: bumuellp/lights-camera-bum-action/setup-rust@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
+        uses: bumuellp/lights-camera-bum-action/setup-rust@34fd1ec3bc1c86211628dd1a8ba7cbd7da0a9594 # v1.15.1
         with:
           targets: wasm32-unknown-unknown
           install-worker-build: true
@@ -120,7 +120,7 @@ jobs:
           (env.CF_API_TOKEN != '' ||
            (fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != '' &&
             fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] != null))
-        uses: bumuellp/lights-camera-bum-action/deploy-worker@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
+        uses: bumuellp/lights-camera-bum-action/deploy-worker@34fd1ec3bc1c86211628dd1a8ba7cbd7da0a9594 # v1.15.1
         with:
           api-token: ${{ env.CF_API_TOKEN || fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] }}
           working-directory: integrations/discord-bot
