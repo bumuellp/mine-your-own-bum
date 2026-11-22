@@ -86,25 +86,19 @@ Check the **Actions** tab in GitHub to ensure no other `Start Minecraft Server` 
 
 ---
 
-## 📦 Machine Images & Architecture Mismatch
+## 📦 Machine Images & Multi-Architecture Fallback
 
-### ⚠️ Golden Image Builder Architecture Mismatch (`exec format error`)
+### ⚠️ Waterfall Placement Fallback & Golden Image Architecture Matching
 
-#### Symptom
-After enabling `server.use_golden_image: true`, the Minecraft container fails to start, systemd reports `Exec format error`, or the VM crashes on boot.
-
-#### Why This Happens
+#### How It Works
 Hetzner Cloud provides two distinct CPU architectures:
-* **ARM64 (Ampere Altra)**: Server models starting with `cax` (e.g. `cax11`, `cax21`).
-* **x86_64 (Intel / AMD)**: Server models starting with `cx` or `cpx` (e.g. `cx22`, `cpx21`).
+* **ARM64 (Ampere Altra)**: Server models starting with `cax` (e.g. `cax11`, `cax21`, `cax31`).
+* **x86_64 (Intel / AMD)**: Server models starting with `cx` or `cpx` (e.g. `cx33`, `cpx12`, `cpx32`).
 
-The Packer golden image workflow (`.github/workflows/packer-build.yml`) defaults to an ARM64 builder instance (`cax11`) that pulls `linux/arm64` container images. If you configure an x86 server type (e.g. `cpx21` or `cx22`) in `config/settings.yaml` while booting from an ARM snapshot, binaries cannot execute due to architecture incompatibility.
-
-#### Solution
-* **Recommended (Stay on ARM64)**: Keep `server_type: "cax21"` in `config/settings.yaml`. The ARM `cax21` model (4 vCPU, 8 GB RAM) offers the best performance-per-euro for Minecraft Paper/Fabric servers.
-* **If Using x86 Hardware**: If you must use an x86 server type (e.g. `cpx22`), either:
-  1. Temporarily disable golden images in `config/settings.yaml`: `use_golden_image: false` (the server will pull architecture-native images directly via Docker on boot).
-  2. Or update the Packer builder instance type in `iac/packer/` to an x86 model (e.g. `cx22`) before running `Build Golden Machine Image`.
+To protect against temporary Hetzner ARM stockouts, startup preflight (`resolve-hcloud-placement`) automatically evaluates `server.server_type` followed by `server.fallback_server_types` (default: `cax21` $\rightarrow$ `cx33` $\rightarrow$ `cax31` $\rightarrow$ `cpx32`) against live datacenter availability:
+1. **Multi-Arch Packer Snapshots**: `.github/workflows/packer-build.yml` builds **both** an ARM64 snapshot (on `packer.arm_builder`, default `cax11`) and an x86_64 snapshot (on `packer.x86_builder`, default `cpx12`).
+2. **Automatic Architecture Matching**: In `iac/main.tf`, `data "hcloud_images" "golden"` filters snapshots by `with_architecture = [data.hcloud_server_type.server.architecture]`.
+3. **Safe Fallback to `docker-ce`**: If `server.use_golden_image: true` is enabled but no golden snapshot exists yet for the selected architecture, OpenTofu automatically falls back to Hetzner's official `"docker-ce"` base image and pulls container images on boot instead of failing or booting the wrong architecture.
 
 ---
 

@@ -115,12 +115,11 @@ sequenceDiagram
 4. **Create Cloudflare Tunnel & Workers VPC Service *(Zero-Trust Sidecar Bridge, Free Tier)***:
    > [!NOTE]
    > Cloudflare Workers VPC works directly on your free `*.workers.dev` worker without purchasing or transferring a custom domain to Cloudflare.
-   1. In the Cloudflare Dashboard, open **Workers & Pages → Workers VPC → Tunnels** (or **Zero Trust → Networks → Tunnels**):
-      - Click **Create a tunnel** → choose **Cloudflared** → name it (e.g. `mc-agent-tunnel`).
-      - Copy the **Tunnel Connector Token** (starts with `eyJ...`) for `cloudflare_tunnel_token` in SOPS, and note the **Tunnel UUID** (you do **not** need to configure Public Hostnames).
-   2. Register a **Workers VPC Service** pointing to `mc-agent:8080` on that tunnel:
+   1. **Create the Tunnel & Obtain Both Tunnel UUID and Connector Token**:
+      - **Via Cloudflare Dashboard**: Open **Zero Trust (Cloudflare One) → Networks → Tunnels** (or **Workers & Pages → Workers VPC → Tunnels**) → **Create a tunnel** → choose **Cloudflared** → name it (e.g. `mc-agent-vpc`). Copy the **Tunnel Connector Token** (`eyJ...` inside the `cloudflared service install <TOKEN>` / `docker run` snippet) for `cloudflare_tunnel_token` in SOPS, and copy the **Tunnel UUID**.
+      - **Via Wrangler CLI**: Run `npx wrangler login` and `npx wrangler tunnel create mc-agent-vpc`. Note that `wrangler tunnel create` outputs only the **Tunnel UUID** (because Wrangler's own runner fetches tokens via OAuth on the fly); grab the `eyJ...` connector token for the headless Docker container from **Zero Trust → Networks → Tunnels → `mc-agent-vpc` → Configure / Add a replica** (or via `GET /client/v4/accounts/<ACCOUNT_ID>/cfd_tunnel/<TUNNEL_UUID>/token`).
+   2. **Register a Workers VPC Service** pointing to `http://mc-agent:8080` on that tunnel:
       ```bash
-      npx wrangler login
       npx wrangler vpc service create mc-agent \
         --type http \
         --tunnel-id <YOUR_TUNNEL_UUID> \
@@ -128,7 +127,12 @@ sequenceDiagram
         --http-port 8080
       ```
       Copy the returned **`Service ID`** (`service_id`).
-   3. Bind the VPC service in `integrations/discord-bot/wrangler.toml`:
+      > [!TIP]
+      > **Why `--type http --http-port 8080` instead of HTTPS?**
+      > The connection has two distinct hops:
+      > 1. **Hop 1 (Internet: Cloudflare Edge $\leftrightarrow$ `cloudflared` on the Hetzner VM)** is **always encrypted via TLS 1.3 / QUIC** using the tunnel token credentials. Nothing crosses the internet in plaintext.
+      > 2. **Hop 2 (Inside the VM: `cloudflared` container $\rightarrow$ `mc-agent:8080` container)** runs strictly over the isolated internal Docker bridge network on the same physical host (`mc-agent` publishes zero ports to the host or internet) and is authenticated with `Authorization: Bearer <AGENT_SHARED_SECRET>`. Using HTTP for this local container-to-container socket avoids managing self-signed TLS certificates for internal Docker container hostnames.
+   3. **Bind the VPC service** in `integrations/discord-bot/wrangler.toml`:
       ```toml
       [[vpc_services]]
       binding = "MC_AGENT"

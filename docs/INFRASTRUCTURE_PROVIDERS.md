@@ -8,7 +8,7 @@ Before configuring the server, you need accounts and API credentials from your c
 
 | Component | Role | Supported Providers | Cost |
 |---|---|---|:---:|
-| **Compute & Persistent Storage** *(Required)* | Ephemeral ARM VM & persistent 10 GB block volume | [Hetzner Cloud](#1-hetzner-cloud-required) | ~€0.45/month idle, ~€0.017/hour running |
+| **Compute & Persistent Storage** *(Required)* | Ephemeral ARM/x86 VM (`cax21` with `cx33`/`cax31`/`cpx32` fallback) & persistent 10–15 GB block volume | [Hetzner Cloud](#1-hetzner-cloud-required) | ~€0.45–€0.68/month idle, ~€0.017/hour running |
 | **Object Storage Backend** *(Required)* | Remote OpenTofu state & optional world backups | [Cloudflare R2](#choice-a-cloudflare-r2-recommended--free) *(Free)*, [Hetzner Object Storage](#choice-b-hetzner-object-storage-native-integration), or [AWS S3](#choice-c-aws-s3--compatible-s3) | Free tier or ~€5.95–€7.00/month |
 | **Automation Tokens** *(Required)* | Triggers automated shutdown when idle | [GitHub Fine-Grained Personal Access Token (PAT)](#3-github-personal-access-tokens-required) | Free |
 | **Dynamic DNS** *(Optional)* | Auto-registers domain name on start | [deSEC.io](#choice-a-desecio-free-automated-dnssec) *(Free)*, [IONOS](#choice-b-ionos-developer-api), or [Hetzner DNS](#choice-c-hetzner-domains--dns) | Free / Included with domain |

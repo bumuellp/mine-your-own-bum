@@ -90,9 +90,32 @@ The server boots from a pre-cached Hetzner Cloud snapshot instead of downloading
 
 ### Baking a Golden Image
 1. Navigate to **Actions > Build Golden Machine Image > Run workflow**.
-2. A temporary ARM Ampere `cax11` builder VM is booted in Hetzner Cloud.
-3. Packer installs Docker, pulls required container images (`itzg/minecraft-server`, `itzg/mc-backup`, `cloudflare/cloudflared`, `ghcr.io/bumuellp/mc-agent`), pre-configures console keyboard layouts, and saves a snapshot with label `role=minecraft-golden-image`.
-4. **Automated Snapshot Rotation**: The workflow automatically rotates snapshots, retaining only the latest golden image so you do not incur excess snapshot storage fees.
+2. A matrix of temporary ARM64 (`cax11`) and x86_64 (`cpx12`) builder VMs is booted in Hetzner Cloud (evaluating `packer.fallback_locations` automatically if a datacenter has temporary stock limits).
+3. Packer installs Docker, pulls required architecture-native container images (`itzg/minecraft-server`, `itzg/mc-backup`, `cloudflare/cloudflared`, `ghcr.io/bumuellp/mc-agent`), pre-configures console keyboard layouts, and saves snapshots labeled `role=minecraft-golden-image` for both `arm` and `x86`.
+4. **Automated Snapshot Rotation**: The workflow automatically rotates old snapshots per architecture, retaining only the latest ARM64 and x86_64 golden images so waterfall server placement (`cax21` $\rightarrow$ `cx33` $\rightarrow$ `cax31` $\rightarrow$ `cpx32`) always has a matching snapshot ready.
+
+---
+
+## 🔄 Switching Mod Loaders / Modpacks & Resetting or Resizing the Volume
+
+Because `/mnt/mc-data` persists across server stops, switching between incompatible mod loaders or major Minecraft versions (for example, moving from a **Fabric 26.3 Crossplay** world to a **NeoForge 1.21.1 Modrinth/CurseForge modpack**) requires a clean volume or world directory so old mods and chunk data do not conflict.
+
+### Recommended Clean Cutover Procedure
+1. **Verify Off-Site Backup**:
+   Before stopping the old server (or via `docker compose run --rm mc-backup`), confirm your latest world archive is present in your Cloudflare R2 / S3 backup bucket.
+2. **Stop the Server**:
+   Run `/mc-stop` in Discord (or run the **Stop Minecraft Server** workflow) so the ephemeral VM is destroyed and the volume is detached.
+3. **Delete the Old Volume in Hetzner Cloud Console**:
+   * Open the [Hetzner Cloud Console](https://console.hetzner.cloud/) $\rightarrow$ **Volumes**.
+   * Delete the existing `<server-name>-data` volume.
+   * *(Why this is safe with OpenTofu)*: During the next startup, `.github/scripts/provision-server.sh` always runs `tofu apply -target=module.volume -auto-approve` **before** planning the compute instance. OpenTofu refreshes state against the Hetzner API, detects that the old volume was deleted out-of-band, provisions a brand-new volume at your configured `server.volume_size_gb` (e.g. `15` GB for modded packs), and passes its new `volume_id` to the VM.
+   * On first boot, `bootstrap-volume.sh` detects the unformatted block device, formats it with `mkfs.ext4 -L mc-data`, and mounts it at `/mnt/mc-data`.
+4. **Update `config/settings.yaml` & Launch**:
+   Commit your new `minecraft.*` loader/modpack settings (and any new `server.volume_size_gb`), push to `main`, and run `/mc-start`.
+
+> [!TIP]
+> **In-Place Volume Resizing (Without Deleting Data)**:
+> If you only want to **increase** `server.volume_size_gb` (e.g. from `10` to `15` GB) while keeping your existing world, simply bump `volume_size_gb` in `config/settings.yaml` and push. Hetzner Cloud volumes support non-destructive online size increases via OpenTofu.
 
 ---
 

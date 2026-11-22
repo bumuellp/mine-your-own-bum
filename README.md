@@ -14,34 +14,59 @@ It combines ephemeral compute instances with persistent block volume retention, 
 
 ## 🌟 Key Architecture & Highlights
 
-```
-                    [ Discord User ] (Optional)
-             (/mc-start .. /mc-status) | (/mc-players, /mc-say, /mc-cmd...)
-                                       v
-                        [ Cloudflare Worker (Rust) ]
-                        /                         \
-      (Lifecycle API)  v                           v  (Workers VPC Binding)
-       [ GitHub Actions API ]              [ cloudflared Tunnel ]
-         /               \                           | (Outbound Only)
-        v                 v                          v
-[server-start.yml]  [server-stop.yml] <--- [ mc-agent Sidecar ] <--> [ Minecraft ]
-        |                 ^                  (RCON, Telemetry,          (RCON +
-  [ OpenTofu /            |  (Idle            Log Tailer)            latest.log)
-    tofu-bum ]            |  Watchdog)               |
-  - Attach Volume         +--------------------------+
-  - Provision VM & DNS                               v
-                                         [ Discord Webhooks ]
-                                       (#mc-commands & #mc-chat)
+```mermaid
+flowchart TB
+    subgraph Discord["💬 Discord Server (#mc-commands & #mc-chat)"]
+        User["Discord User"]
+        WHCmd["#mc-commands Webhook<br>(Boot Ready Embed)"]
+        WHChat["#mc-chat Webhook<br>(Live Chat, Joins & Leaves)"]
+    end
 
-   ──────────────────────────────────────────────────────────────
-   Independent CI/CD Lifecycle (Triggers on Code / Dependency Changes):
-   • Packer Builder        -> Pre-bakes golden snapshot image (packer-build.yml)
-   • mc-agent Builder      -> Publishes multi-arch GHCR image (build-mc-agent.yml)
-   • Cloudflare Deployer   -> Builds Rust WASM & deploys Discord worker
-   • Command Synchronizer  -> Updates Discord slash commands via REST API
+    subgraph CF["☁️ Cloudflare Edge (100% Free Tier)"]
+        Worker["Discord Bot Worker (Rust / WASM)<br>Ed25519 Verify • Channel & Tiered ACL"]
+        VPC["Cloudflare Workers VPC<br>([[vpc_services]] MC_AGENT Binding)"]
+    end
+
+    subgraph GHA["⚙️ GitHub Actions & OpenTofu State"]
+        Start["server-start.yml<br>• resolve-hcloud-placement (cax21→cx33→cax31→cpx32)<br>• preflight.sh & OpenTofu Apply<br>• Dynamic DNS Sync (deSEC / IONOS / Hetzner)"]
+        Stop["server-stop.yml<br>• DNS Cleanup & Graceful ACPI Shutdown<br>• tofu destroy -target=module.server"]
+        S3State[("Cloudflare R2 / S3<br>AES-GCM Encrypted State<br>& World Backups")]
+        CI["Independent CI/CD Pipelines<br>• packer-build.yml (ARM64 cax11 + x86_64 cpx12 Golden Images)<br>• build-mc-agent.yml (Multi-Arch Rust → GHCR)<br>• deploy-discord-bot.yml (Worker Deploy & 11 Command Sync)<br>• container-smoke-test.yml (Compose + RCON E2E)"]
+    end
+
+    subgraph Hetzner["🖥️ Hetzner Cloud Ephemeral VM + Persistent Volume (/mnt/mc-data)"]
+        direction TB
+        CFd["cloudflared Sidecar<br>(Outbound TLS 1.3 / QUIC Tunnel)"]
+        Agent["mc-agent Sidecar (Rust :8080)<br>• Bearer Auth & RCON Client<br>• /proc & statvfs Telemetry<br>• latest.log Tailer & IP Redactor"]
+        MC["mc-server (itzg/minecraft-server)<br>Java :25565 • Bedrock UDP :19132 • RCON :25575<br>Vanilla / Fabric / NeoForge / Modrinth / CurseForge"]
+        Backup["mc-backup Sidecar<br>(Periodic Rclone Snapshots & Pruning)"]
+        Watchdog["systemd mc-idle-watchdog<br>(0-Player RCON Poll → save-all flush)"]
+    end
+
+    User -->|"/mc-start, /mc-stop, /mc-status"| Worker
+    User -->|"/mc-players, /mc-top, /mc-logs, /mc-say,<br>/mc-whitelist, /mc-backup, /mc-restart, /mc-cmd"| Worker
+
+    Worker -->|"Lifecycle Dispatch & Mutex Check"| Start
+    Worker -->|"Lifecycle Dispatch"| Stop
+    Worker -.->|"Direct TCP :25565 SLP Ping"| MC
+    Worker ==>|"env.service('MC_AGENT')"| VPC
+
+    Start <-->|"PBKDF2 + AES-GCM"| S3State
+    Stop <-->|"PBKDF2 + AES-GCM"| S3State
+    Start ==>|"Reconcile Volume, Boot Golden Image<br>(ARM64 or x86_64) & Attach /mnt/mc-data"| Hetzner
+    Stop ==>|"ACPI Poweroff & Destroy Compute Only"| Hetzner
+
+    CFd <==>|"Outbound-Only Encrypted Tunnel<br>(Zero Inbound Admin Ports)"| VPC
+    CFd -->|"Local Docker Bridge<br>http://mc-agent:8080"| Agent
+    Agent <-->|"RCON :25575 & ro /logs + /proc"| MC
+    Agent -->|"Boot Ready Embed"| WHCmd
+    Agent -->|"Live Chat / Join / Leave"| WHChat
+    Backup -->|"Upload & Prune Archives"| S3State
+    Watchdog -->|"Idle Timeout Reached"| Stop
 ```
 
-* **Pay-Per-Play Model (~€0.45/month idle)**: Compute instances are destroyed when not in use. You only pay for the idle 10 GB persistent block volume; compute costs drop to **€0.00/h** when stopped.
+* **Pay-Per-Play Model (~€0.45–€0.68/month idle)**: Compute instances are destroyed when not in use. You only pay for the idle persistent block volume (`10–15 GB`); compute costs drop to **€0.00/h** when stopped.
+* **Multi-Arch Waterfall Placement & Golden Images**: Preflight automatically probes live Hetzner datacenter stock across your primary and fallback models (`cax21` $\rightarrow$ `cx33` $\rightarrow$ `cax31` $\rightarrow$ `cpx32`) and selects the matching pre-baked **ARM64 or x86_64 Packer golden snapshot** (with automatic fallback to `docker-ce`).
 * **Auto-Stop Idle Watchdog**: An on-server systemd daemon detects 0 active players, cleanly saves world chunks via RCON, and triggers automated teardown.
 * **Zero-Loss Graceful ACPI Teardown**: Intercepts ACPI power signals, allowing systemd and Docker to trap SIGTERM, cleanly flush world chunks, and unmount block storage safely before VM destruction.
 * **Declarative Loader & Modpack Support**: Switch cleanly between Vanilla/Fabric (e.g. Geyser + Floodgate Java/Bedrock crossplay) and modded stacks (e.g. NeoForge, Modrinth modpacks, CurseForge mods) purely via `config/settings.yaml`.
