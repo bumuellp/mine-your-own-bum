@@ -44,8 +44,8 @@ if [ -n "${TF_PLUGIN_CACHE_DIR:-}" ]; then
 	mkdir -p "$TF_PLUGIN_CACHE_DIR"
 fi
 
-REAL_CF_KEY=""
-if [ -f "${REPO_ROOT}/config/secrets.enc.yaml" ] && command -v sops >/dev/null 2>&1; then
+REAL_CF_KEY="${CF_API_KEY:-}"
+if [ -z "$REAL_CF_KEY" ] && [ -f "${REPO_ROOT}/config/secrets.enc.yaml" ] && command -v sops >/dev/null 2>&1; then
 	REAL_CF_KEY="$(sops -d --extract '["cf_api_key"]' "${REPO_ROOT}/config/secrets.enc.yaml" 2>/dev/null || echo "")"
 fi
 if [ -n "$REAL_CF_KEY" ]; then
@@ -67,6 +67,7 @@ docker compose -f "$COMPOSE_MODPACK_FILE" config >/dev/null
 grep -q "^#cloud-config" "$CLOUD_INIT_FILE"
 grep -q "CURSEFORGE_FILES:" "$COMPOSE_MODPACK_FILE"
 grep -q "MODRINTH_MODPACK_VERSION_TYPE: \"beta\"" "$COMPOSE_MODPACK_FILE"
+grep -q "MODRINTH_EXCLUDE_FILES:" "$COMPOSE_MODPACK_FILE"
 grep -q "MODRINTH_DOWNLOAD_DEPENDENCIES: \"required\"" "$COMPOSE_MODPACK_FILE"
 echo "[✓] Docker Compose (baseline + active settings + synthetic matrix) and Cloud-Init syntax valid."
 
@@ -98,20 +99,27 @@ else
 	chmod 777 "$MOUNT_DIR"
 fi
 
+if [ -d "${MOUNT_DIR}/mods" ]; then
+	while IFS= read -r excl; do
+		[ -z "$excl" ] && continue
+		sudo find "${MOUNT_DIR}/mods" -maxdepth 1 -type f -iname "*${excl}*" -delete 2>/dev/null || find "${MOUNT_DIR}/mods" -maxdepth 1 -type f -iname "*${excl}*" -delete 2>/dev/null || true
+	done < <(cfg_list '.minecraft.modrinth_exclude_files')
+fi
+
 echo "==> Step 4: Launching Minecraft test container..."
 BOOT_COMPOSE="$COMPOSE_FILE"
 if [ -f "${REPO_ROOT}/config/settings.yaml" ]; then
-	if ! grep -q "CURSEFORGE_FILES:" "$COMPOSE_ACTIVE_FILE" || [ -n "$REAL_CF_KEY" ]; then
-		BOOT_COMPOSE="$COMPOSE_ACTIVE_FILE"
-		echo "    Booting active repository configuration (config/settings.yaml)..."
+	BOOT_COMPOSE="$COMPOSE_ACTIVE_FILE"
+	if [ -n "$REAL_CF_KEY" ]; then
+		echo "    Booting active repository configuration (config/settings.yaml with CurseForge API key)..."
 	else
-		echo "    CurseForge API key unavailable in environment; booting baseline configuration (config/settings.example.yaml)..."
+		echo "    Booting active repository configuration (config/settings.yaml; CurseForge projects skipped without API key)..."
 	fi
 fi
 docker compose -f "$BOOT_COMPOSE" up -d mc-server
 
 echo "==> Step 5: Awaiting engine initialization and healthcheck..."
-MAX_ATTEMPTS=45 # 45 * 6s = 270s (covers cold modpack download + NeoForge patching)
+MAX_ATTEMPTS=60 # 60 * 6s = 360s (covers cold modpack download + NeoForge patching + worldgen)
 ATTEMPT=0
 HEALTHY=false
 
@@ -125,7 +133,7 @@ while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
 
 	RESTART_COUNT="$(docker inspect -f '{{.State.RestartCount}}' mc-server 2>/dev/null || echo "0")"
 	CONTAINER_STATUS="$(docker inspect -f '{{.State.Status}}' mc-server 2>/dev/null || echo "running")"
-	if [ "$RESTART_COUNT" -ge 2 ] || [ "$CONTAINER_STATUS" = "restarting" ]; then
+	if [ "$RESTART_COUNT" -ge 1 ] || [ "$CONTAINER_STATUS" = "restarting" ] || [ "$CONTAINER_STATUS" = "exited" ]; then
 		echo "ERROR: Minecraft container entered crashloop (status: '${CONTAINER_STATUS}', restarts: ${RESTART_COUNT})." >&2
 		echo "=== Container Logs ===" >&2
 		docker logs --tail 100 mc-server >&2 || true

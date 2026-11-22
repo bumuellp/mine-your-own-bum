@@ -38,6 +38,8 @@ jobs:
     name: Verify Minecraft Container Stack
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    env:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,6 +48,16 @@ jobs:
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version_file: .tofu-version
+
+      - name: Decrypt CurseForge API Key
+        id: sec
+        if: hashFiles('config/secrets.enc.yaml') != '' && env.SOPS_AGE_KEY != ''
+        uses: bumuellp/lights-camera-bum-action/decrypt-sops@34fd1ec3bc1c86211628dd1a8ba7cbd7da0a9594 # v1.15.1
+        with:
+          age-key: ${{ secrets.SOPS_AGE_KEY }}
+          file: config/secrets.enc.yaml
+          keys: |
+            cf_api_key
 
       - name: Cache OpenTofu Provider Plugins
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -71,5 +83,5 @@ jobs:
       - name: Run Container Smoke Test
         env:
           TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/tofu-plugin-cache
-          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+          CF_API_KEY: ${{ steps.sec.outputs.json != '' && fromJSON(steps.sec.outputs.json).cf_api_key || '' }}
         run: .github/scripts/container-smoke-test.sh

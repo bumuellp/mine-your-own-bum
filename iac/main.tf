@@ -32,10 +32,11 @@ locals {
   cf_api_key = trimspace(local.raw_cf_api_key)
 
   # Loader-agnostic modpack, project, plugin, and startup RCON command lists
-  modrinth_modpack    = try(trimspace(local.settings.minecraft.modrinth_modpack), "")
-  modrinth_projects   = try(local.settings.minecraft.modrinth_projects, [])
-  curseforge_projects = try(local.settings.minecraft.curseforge_projects, [])
-  plugins             = try(local.settings.minecraft.plugins, [])
+  modrinth_modpack       = try(trimspace(local.settings.minecraft.modrinth_modpack), "")
+  modrinth_exclude_files = try(local.settings.minecraft.modrinth_exclude_files, [])
+  modrinth_projects      = try(local.settings.minecraft.modrinth_projects, [])
+  curseforge_projects    = try(local.settings.minecraft.curseforge_projects, [])
+  plugins                = try(local.settings.minecraft.plugins, [])
 
   raw_rcon_startup_commands = try(local.settings.minecraft.rcon_startup_commands, [])
   rcon_startup_commands = [
@@ -184,6 +185,7 @@ locals {
     server_fqdn                 = local.server_fqdn
     server_location             = local.settings.server.location
     modrinth_modpack            = local.modrinth_modpack
+    modrinth_exclude_files      = local.modrinth_exclude_files
     modrinth_projects           = local.modrinth_projects
     curseforge_projects         = local.curseforge_projects
     cf_api_key                  = local.cf_api_key
@@ -201,20 +203,21 @@ locals {
   })
 
   cloud_init = templatefile("${path.module}/templates/cloud-init.yaml.tftpl", {
-    always_on          = (var.github_repository == null) ? false : local.settings.server.always_on
-    idle_timeout       = local.settings.server.idle_timeout_minutes
-    github_repository  = coalesce(var.github_repository, "")
-    github_pat         = local.github_pat
-    github_api_version = trimspace(file("${path.module}/../.github-api-version"))
-    keyboard_layout    = local.keyboard_layout
-    console_password   = local.console_password
-    volume_id          = module.volume.id
-    docker_compose     = local.docker_compose
-    watchdog_script    = file("${path.module}/files/scripts/idle-watchdog.sh")
-    bootstrap_script   = file("${path.module}/files/scripts/bootstrap-volume.sh")
-    prune_script       = file("${path.module}/files/scripts/prune-rclone-backups.sh")
-    systemd_service    = file("${path.module}/files/systemd/mc-idle-watchdog.service")
-    systemd_timer      = file("${path.module}/files/systemd/mc-idle-watchdog.timer")
+    always_on              = (var.github_repository == null) ? false : local.settings.server.always_on
+    idle_timeout           = local.settings.server.idle_timeout_minutes
+    github_repository      = coalesce(var.github_repository, "")
+    github_pat             = local.github_pat
+    github_api_version     = trimspace(file("${path.module}/../.github-api-version"))
+    keyboard_layout        = local.keyboard_layout
+    console_password       = local.console_password
+    volume_id              = module.volume.id
+    docker_compose         = local.docker_compose
+    modrinth_exclude_files = local.modrinth_exclude_files
+    watchdog_script        = file("${path.module}/files/scripts/idle-watchdog.sh")
+    bootstrap_script       = file("${path.module}/files/scripts/bootstrap-volume.sh")
+    prune_script           = file("${path.module}/files/scripts/prune-rclone-backups.sh")
+    systemd_service        = file("${path.module}/files/systemd/mc-idle-watchdog.service")
+    systemd_timer          = file("${path.module}/files/systemd/mc-idle-watchdog.timer")
   })
 }
 

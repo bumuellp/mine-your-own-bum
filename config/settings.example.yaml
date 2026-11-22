@@ -34,6 +34,7 @@ minecraft:
     - "Steve"
     # - "00000000-0000-0000-0009-0123456789ab"  # Bedrock Gamertag
   modrinth_modpack: ""
+  modrinth_exclude_files: []  # Optional: client-only mods inside a modpack to exclude on server (e.g. ["raised"])
   modrinth_projects:
     - "fabric-api"
     - "lithium"
