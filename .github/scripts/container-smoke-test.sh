@@ -11,19 +11,26 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPO_ROOT}"
 
 COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
+COMPOSE_ACTIVE_FILE="${REPO_ROOT}/docker-compose.active.yml"
 COMPOSE_MODPACK_FILE="${REPO_ROOT}/docker-compose.modpack.yml"
 CLOUD_INIT_FILE="${REPO_ROOT}/cloud-init.yaml"
 MOUNT_DIR="/mnt/mc-data"
 
 cleanup() {
 	echo "==> Cleaning up smoke test resources..."
-	if [ -f "$COMPOSE_FILE" ]; then
-		docker compose -f "$COMPOSE_FILE" down -v --remove-orphans >/dev/null 2>&1 || true
-		rm -f "$COMPOSE_FILE"
-	fi
-	rm -f "$COMPOSE_MODPACK_FILE" "$CLOUD_INIT_FILE"
+	for f in "$COMPOSE_ACTIVE_FILE" "$COMPOSE_FILE"; do
+		if [ -f "$f" ]; then
+			docker compose -f "$f" down -v --remove-orphans >/dev/null 2>&1 || true
+		fi
+	done
+	rm -f "$COMPOSE_FILE" "$COMPOSE_ACTIVE_FILE" "$COMPOSE_MODPACK_FILE" "$CLOUD_INIT_FILE"
 	if [ -d "$MOUNT_DIR" ]; then
-		sudo rm -rf "$MOUNT_DIR" 2>/dev/null || rm -rf "$MOUNT_DIR" 2>/dev/null || true
+		if [ -n "${GITHUB_ACTIONS:-}" ]; then
+			# Preserve downloaded mods, libraries, and patched loader jars for actions/cache
+			sudo rm -rf "${MOUNT_DIR}/world"* "${MOUNT_DIR}/logs" "${MOUNT_DIR}/backups" "${MOUNT_DIR}/"*.lock 2>/dev/null || true
+		else
+			sudo rm -rf "$MOUNT_DIR" 2>/dev/null || rm -rf "$MOUNT_DIR" 2>/dev/null || true
+		fi
 	fi
 	rm -rf "${REPO_ROOT}/tests/smoke-test/.terraform"* "${REPO_ROOT}/tests/smoke-test/terraform.tfstate"* >/dev/null 2>&1 || true
 }
@@ -34,17 +41,51 @@ echo "==> Step 1: Rendering Docker Compose & Cloud-Init specifications via OpenT
 if [ -n "${TF_PLUGIN_CACHE_DIR:-}" ]; then
 	mkdir -p "$TF_PLUGIN_CACHE_DIR"
 fi
+
+REAL_CF_KEY=""
+if [ -f "${REPO_ROOT}/config/secrets.enc.yaml" ] && command -v sops >/dev/null 2>&1; then
+	REAL_CF_KEY="$(sops -d --extract '["cf_api_key"]' "${REPO_ROOT}/config/secrets.enc.yaml" 2>/dev/null || echo "")"
+fi
+if [ -n "$REAL_CF_KEY" ]; then
+	[ -n "${GITHUB_ACTIONS:-}" ] && echo "::add-mask::${REAL_CF_KEY}"
+	export TF_VAR_cf_api_key="$REAL_CF_KEY"
+fi
+
 tofu -chdir=tests/smoke-test init -input=false >/dev/null
 tofu -chdir=tests/smoke-test apply -auto-approve -input=false >/dev/null
 tofu -chdir=tests/smoke-test output -raw docker_compose >"$COMPOSE_FILE"
+tofu -chdir=tests/smoke-test output -raw docker_compose_active >"$COMPOSE_ACTIVE_FILE"
 tofu -chdir=tests/smoke-test output -raw docker_compose_modpack >"$COMPOSE_MODPACK_FILE"
 tofu -chdir=tests/smoke-test output -raw cloud_init >"$CLOUD_INIT_FILE"
 
 echo "==> Step 2: Validating Docker Compose & Cloud-Init syntax..."
 docker compose -f "$COMPOSE_FILE" config >/dev/null
+docker compose -f "$COMPOSE_ACTIVE_FILE" config >/dev/null
 docker compose -f "$COMPOSE_MODPACK_FILE" config >/dev/null
 grep -q "^#cloud-config" "$CLOUD_INIT_FILE"
-echo "[✓] Docker Compose (baseline + modpack/CurseForge) and Cloud-Init syntax valid."
+grep -q "CURSEFORGE_FILES:" "$COMPOSE_MODPACK_FILE"
+grep -q "MODRINTH_MODPACK_VERSION_TYPE: \"beta\"" "$COMPOSE_MODPACK_FILE"
+grep -q "MODRINTH_DOWNLOAD_DEPENDENCIES: \"required\"" "$COMPOSE_MODPACK_FILE"
+echo "[✓] Docker Compose (baseline + active settings + synthetic matrix) and Cloud-Init syntax valid."
+
+echo "==> Step 2b: Validating active settings Modrinth modpack & project resolution..."
+# shellcheck source=scripts/lib/common.sh
+source "${REPO_ROOT}/scripts/lib/common.sh"
+if [ -f "${REPO_ROOT}/config/settings.yaml" ]; then
+	export SETTINGS_FILE="${REPO_ROOT}/config/settings.yaml"
+else
+	export SETTINGS_FILE="${REPO_ROOT}/config/settings.example.yaml"
+fi
+export SECRETS_FILE="${REPO_ROOT}/config/secrets.example.yaml"
+export DECRYPTED="auth_password: \"smoke-test-auth\"
+cf_api_key: \"smoke-test-cf-key\""
+ALL_OK=0
+# shellcheck source=scripts/preflight.d/60-minecraft.sh
+source "${REPO_ROOT}/scripts/preflight.d/60-minecraft.sh"
+if [ "$ALL_OK" -ne 0 ]; then
+	echo "ERROR: Active settings failed Minecraft / Modrinth preflight validation." >&2
+	exit 1
+fi
 
 echo "==> Step 3: Preparing persistent mount directory..."
 if command -v sudo >/dev/null 2>&1; then
@@ -56,10 +97,19 @@ else
 fi
 
 echo "==> Step 4: Launching Minecraft test container..."
-docker compose -f "$COMPOSE_FILE" up -d mc-server
+BOOT_COMPOSE="$COMPOSE_FILE"
+if [ -f "${REPO_ROOT}/config/settings.yaml" ]; then
+	if ! grep -q "CURSEFORGE_FILES:" "$COMPOSE_ACTIVE_FILE" || [ -n "$REAL_CF_KEY" ]; then
+		BOOT_COMPOSE="$COMPOSE_ACTIVE_FILE"
+		echo "    Booting active repository configuration (config/settings.yaml)..."
+	else
+		echo "    CurseForge API key unavailable in environment; booting baseline configuration (config/settings.example.yaml)..."
+	fi
+fi
+docker compose -f "$BOOT_COMPOSE" up -d mc-server
 
 echo "==> Step 5: Awaiting engine initialization and healthcheck..."
-MAX_ATTEMPTS=25 # 25 * 6s = 150s (typical cold boot takes 45-60s)
+MAX_ATTEMPTS=45 # 45 * 6s = 270s (covers cold modpack download + NeoForge patching)
 ATTEMPT=0
 HEALTHY=false
 

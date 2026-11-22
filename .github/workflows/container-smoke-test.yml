@@ -37,7 +37,7 @@ jobs:
   smoke-test:
     name: Verify Minecraft Container Stack
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -55,7 +55,21 @@ jobs:
           restore-keys: |
             tofu-smoke-${{ runner.os }}-${{ runner.arch }}-
 
+      - name: Prepare Persistent Mount Directory
+        run: |
+          sudo mkdir -p /mnt/mc-data
+          sudo chmod 777 /mnt/mc-data
+
+      - name: Cache Downloaded Mods & Loader Libraries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /mnt/mc-data
+          key: mc-smoke-data-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('config/settings.yaml', 'config/settings.example.yaml') }}
+          restore-keys: |
+            mc-smoke-data-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Run Container Smoke Test
         env:
           TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/tofu-plugin-cache
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: .github/scripts/container-smoke-test.sh

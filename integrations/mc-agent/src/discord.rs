@@ -46,6 +46,17 @@ pub fn build_chat_event_payload(event: &LogEvent) -> Value {
 
 /// Builds the rich "Server Online & Ready" Discord webhook embed payload.
 pub fn build_boot_ready_payload(server_fqdn: &str, server_ipv4: &str, location: &str) -> Value {
+    let modpack = std::env::var("MC_MODRINTH_MODPACK").unwrap_or_default();
+    build_boot_ready_payload_with_modpack(server_fqdn, server_ipv4, location, &modpack)
+}
+
+/// Builds the rich "Server Online & Ready" Discord webhook embed payload with optional modpack hint.
+pub fn build_boot_ready_payload_with_modpack(
+    server_fqdn: &str,
+    server_ipv4: &str,
+    location: &str,
+    modrinth_modpack: &str,
+) -> Value {
     let ip_display = if server_ipv4.trim().is_empty() {
         "N/A"
     } else {
@@ -62,28 +73,39 @@ pub fn build_boot_ready_payload(server_fqdn: &str, server_ipv4: &str, location: 
         location.trim()
     };
 
+    let mut fields = vec![
+        json!({
+            "name": "🌐 Domain / Server Address",
+            "value": format!("`{domain_display}`"),
+            "inline": true
+        }),
+        json!({
+            "name": "🖥️ Direct IP (Bypass DNS Cache)",
+            "value": format!("`{ip_display}:25565`"),
+            "inline": true
+        }),
+        json!({
+            "name": "📍 Location",
+            "value": format!("`{loc_display}`"),
+            "inline": true
+        }),
+    ];
+
+    let mp = modrinth_modpack.trim();
+    if !mp.is_empty() {
+        fields.push(json!({
+            "name": "📦 Client Modpack Required",
+            "value": format!("`{mp}` — Run `/mc-mods` in Discord for download links & required mods."),
+            "inline": false
+        }));
+    }
+
     json!({
         "embeds": [{
             "title": "🟢 Minecraft Server is ONLINE & Ready!",
             "description": "All mods and world chunks are initialized. You can connect now!",
             "color": 3066993,
-            "fields": [
-                {
-                    "name": "🌐 Domain / Server Address",
-                    "value": format!("`{domain_display}`"),
-                    "inline": true
-                },
-                {
-                    "name": "🖥️ Direct IP (Bypass DNS Cache)",
-                    "value": format!("`{ip_display}:25565`"),
-                    "inline": true
-                },
-                {
-                    "name": "📍 Location",
-                    "value": format!("`{loc_display}`"),
-                    "inline": true
-                }
-            ]
+            "fields": fields
         }],
         "allowed_mentions": { "parse": [] }
     })

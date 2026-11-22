@@ -42,10 +42,18 @@ services:
 %{ endfor ~}
 %{ endif ~}
 %{ if modrinth_modpack != "" ~}
-      MODRINTH_MODPACK: ${replace(jsonencode(modrinth_modpack), "$", "$$")}
+      MODRINTH_MODPACK: ${replace(jsonencode(split(":", modrinth_modpack)[0]), "$", "$$")}
+%{ if length(split(":", modrinth_modpack)) > 1 ~}
+%{ if contains(["release", "beta", "alpha"], lower(split(":", modrinth_modpack)[1])) ~}
+      MODRINTH_MODPACK_VERSION_TYPE: ${jsonencode(lower(split(":", modrinth_modpack)[1]))}
+%{ else ~}
+      MODRINTH_VERSION: ${replace(jsonencode(split(":", modrinth_modpack)[1]), "$", "$$")}
+%{ endif ~}
+%{ endif ~}
 %{ endif ~}
 %{ if length(modrinth_projects) > 0 ~}
       MODRINTH_ALLOWED_VERSION_TYPE: "release"
+      MODRINTH_DOWNLOAD_DEPENDENCIES: "required"
       MODRINTH_PROJECTS: |
 %{ for m in modrinth_projects ~}
         ${m}
@@ -53,7 +61,7 @@ services:
 %{ endif ~}
 %{ if length(curseforge_projects) > 0 ~}
       CF_API_KEY: ${replace(jsonencode(cf_api_key), "$", "$$")}
-      CURSEFORGE_PROJECTS: |
+      CURSEFORGE_FILES: |
 %{ for c in curseforge_projects ~}
         ${c}
 %{ endfor ~}
@@ -133,7 +141,7 @@ services:
     mem_limit: 64m
     depends_on:
       mc-server:
-        condition: service_healthy
+        condition: service_started
     security_opt:
       - no-new-privileges:true
     env_file:
@@ -149,6 +157,9 @@ services:
       DISCORD_COMMAND_WEBHOOK_URL: ${replace(jsonencode(discord_command_webhook_url), "$", "$$")}
       SERVER_FQDN: ${replace(jsonencode(server_fqdn), "$", "$$")}
       SERVER_LOCATION: ${replace(jsonencode(server_location), "$", "$$")}
+%{ if modrinth_modpack != "" ~}
+      MC_MODRINTH_MODPACK: ${replace(jsonencode(modrinth_modpack), "$", "$$")}
+%{ endif ~}
     volumes:
       - /mnt/mc-data/logs:/logs:ro
       - /mnt/mc-data:/data:ro

@@ -331,6 +331,7 @@ Slash commands are synchronized automatically whenever the **Deploy Discord Bot*
 | Command | Channel Scope | Permission Tier | Description & Behavior |
 |---|---|---|---|
 | `/mc-status` | `#mc-commands` | Public / Open | Pings TCP `25565`, queries GitHub Actions for active start/stop runs, and reports direct IP + connect info. |
+| `/mc-mods` | `#mc-commands` | Public / Open | Displays required client modloader, Minecraft version, base modpack link, Modrinth/CurseForge mod URLs, and launcher slugs (works 24/7 even while server is offline). |
 | `/mc-start` | `#mc-commands` | Lifecycle (`ALLOWED_USER_IDS` if non-empty, else open) | Verifies server is offline and no workflow is running, then dispatches `server-start.yml`. |
 | `/mc-stop` | `#mc-commands` | Lifecycle (`ALLOWED_USER_IDS` if non-empty, else open) | Dispatches `server-stop.yml` to save world chunks, run off-site backup (if enabled), and destroy the VM. |
 | `/mc-players` | `#mc-commands` | Public / Open | Queries `mc-agent` via Workers VPC (`RCON list`) and displays online player count & names. |

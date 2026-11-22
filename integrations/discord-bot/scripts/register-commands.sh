@@ -34,6 +34,10 @@ COMMANDS_JSON='[
     "description": "Check if the server is running or if a workflow is in progress"
   },
   {
+    "name": "mc-mods",
+    "description": "Show required client modloader, modpack, and mod download links to join"
+  },
+  {
     "name": "mc-players",
     "description": "List currently connected Minecraft players"
   },
@@ -140,11 +144,12 @@ HTTP_RESPONSE="$(curl -s -w "\n%{http_code}" -X PUT \
 	-d "$COMMANDS_JSON" \
 	"$API_URL")"
 
+COMMAND_COUNT="$(echo "$COMMANDS_JSON" | jq 'length')"
 HTTP_STATUS="$(echo "$HTTP_RESPONSE" | tail -n 1)"
 BODY="$(echo "$HTTP_RESPONSE" | sed '$d')"
 
 if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
-	echo "[✓] Successfully registered all 11 Discord slash commands."
+	echo "[✓] Successfully registered all ${COMMAND_COUNT} Discord slash commands."
 else
 	echo "[✗] Failed to register Discord slash commands (HTTP ${HTTP_STATUS}):" >&2
 	echo "$BODY" >&2

@@ -3,7 +3,8 @@
 use super::client::update_deferred_response;
 use super::format::{
     format_agent_error, format_already_running_message, format_blocked_action, format_logs_message,
-    format_players_message, format_rcon_output, format_status_message, format_system_message,
+    format_mods_hint, format_mods_message, format_players_message, format_rcon_output,
+    format_status_message, format_system_message,
 };
 use super::models::{CommandData, option_str_from};
 use crate::agent::{
@@ -12,8 +13,124 @@ use crate::agent::{
 };
 use crate::github::{dispatch_workflow, get_active_workflow};
 use crate::minecraft::{clean_ip, ping_minecraft_server, resolve_ip_doh};
-use crate::types::{ActiveWorkflow, PingResult};
+use crate::types::{ActiveWorkflow, ModConfig, PingResult};
 use worker::Fetcher;
+
+/// Channel routing scope for a Discord slash command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChannelScope {
+    /// Operational commands restricted to `COMMAND_CHANNEL_ID` (`#mc-commands`).
+    Commands,
+    /// In-game chat commands restricted to `CHAT_CHANNEL_ID` (`#mc-chat`).
+    Chat,
+}
+
+/// Authorization tier for a Discord slash command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AccessTier {
+    /// Accessible to any guild member in the allowed channel.
+    Public,
+    /// Restricted to `ALLOWED_USER_IDS` when configured; open when `ALLOWED_USER_IDS` is empty.
+    Lifecycle,
+    /// Fail-closed: requires `ALLOWED_USER_IDS` to be non-empty and contain the caller's ID.
+    AdminFailClosed,
+}
+
+/// Unified metadata record for a registered Discord slash command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CommandSpec {
+    pub command: SlashCommand,
+    pub name: &'static str,
+    pub channel_scope: ChannelScope,
+    pub access_tier: AccessTier,
+}
+
+/// Single-source-of-truth macro generating the `SlashCommand` enum, its `CommandSpec` table,
+/// parser, metadata accessors, and handler dispatch from one declarative table.
+macro_rules! define_slash_commands {
+    ($( ($variant:ident, $name:literal, $scope:ident, $tier:ident, $handler:ident) ),+ $(,)?) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum SlashCommand {
+            $( $variant, )+
+        }
+
+        impl SlashCommand {
+            /// Static registry of all slash command specifications.
+            pub const ALL: &'static [CommandSpec] = &[
+                $(
+                    CommandSpec {
+                        command: Self::$variant,
+                        name: $name,
+                        channel_scope: ChannelScope::$scope,
+                        access_tier: AccessTier::$tier,
+                    },
+                )+
+            ];
+
+            /// Returns the complete `CommandSpec` data structure for this command.
+            pub const fn spec(self) -> CommandSpec {
+                match self {
+                    $(
+                        Self::$variant => CommandSpec {
+                            command: Self::$variant,
+                            name: $name,
+                            channel_scope: ChannelScope::$scope,
+                            access_tier: AccessTier::$tier,
+                        },
+                    )+
+                }
+            }
+
+            /// Parses a Discord slash command name at the webhook boundary using `Self::ALL`.
+            pub fn parse(name: &str) -> Option<Self> {
+                Self::ALL
+                    .iter()
+                    .find(|spec| spec.name == name)
+                    .map(|spec| spec.command)
+            }
+
+            /// Canonical Discord slash command string.
+            pub const fn as_str(self) -> &'static str {
+                self.spec().name
+            }
+
+            /// Channel routing scope for this command.
+            pub const fn channel_scope(self) -> ChannelScope {
+                self.spec().channel_scope
+            }
+
+            /// ACL permission tier for this command.
+            pub const fn access_tier(self) -> AccessTier {
+                self.spec().access_tier
+            }
+        }
+
+        async fn execute_command_with<B: CommandBackend>(
+            command: SlashCommand,
+            ctx: &CommandContext,
+            backend: &B,
+        ) {
+            match command {
+                $( SlashCommand::$variant => $handler(ctx, backend).await, )+
+            }
+        }
+    };
+}
+
+define_slash_commands! {
+    (Status,    "mc-status",    Commands, Public,          handle_status_with),
+    (Mods,      "mc-mods",      Commands, Public,          handle_mods_with),
+    (Start,     "mc-start",     Commands, Lifecycle,       handle_start_with),
+    (Stop,      "mc-stop",      Commands, Lifecycle,       handle_stop_with),
+    (Players,   "mc-players",   Commands, Public,          handle_players_with),
+    (Top,       "mc-top",       Commands, Public,          handle_top_with),
+    (Logs,      "mc-logs",      Commands, AdminFailClosed, handle_logs_with),
+    (Say,       "mc-say",       Chat,     Public,          handle_say_with),
+    (Whitelist, "mc-whitelist", Commands, AdminFailClosed, handle_whitelist_with),
+    (Backup,    "mc-backup",    Commands, Lifecycle,       handle_backup_with),
+    (Restart,   "mc-restart",   Commands, AdminFailClosed, handle_restart_with),
+    (Cmd,       "mc-cmd",       Commands, AdminFailClosed, handle_cmd_with),
+}
 
 /// Execution context passed to slash command handlers.
 #[derive(Clone, Debug)]
@@ -27,6 +144,7 @@ pub struct CommandContext {
     pub server_location: String,
     pub command_channel_id: String,
     pub caller_name: String,
+    pub mod_config: ModConfig,
     pub command_data: Option<CommandData>,
 }
 
@@ -128,7 +246,7 @@ impl CommandBackend for RealBackend {
 
 /// Route and execute the requested slash command using the Cloudflare Workers VPC binding.
 pub async fn execute_command(
-    command: &str,
+    command: SlashCommand,
     ctx: &CommandContext,
     fetcher: Option<Fetcher>,
     agent_secret: String,
@@ -140,21 +258,9 @@ pub async fn execute_command(
     execute_command_with(command, ctx, &backend).await;
 }
 
-async fn execute_command_with<B: CommandBackend>(command: &str, ctx: &CommandContext, backend: &B) {
-    match command {
-        "mc-status" => handle_status_with(ctx, backend).await,
-        "mc-start" => handle_start_with(ctx, backend).await,
-        "mc-stop" => handle_stop_with(ctx, backend).await,
-        "mc-players" => handle_players_with(ctx, backend).await,
-        "mc-top" => handle_top_with(ctx, backend).await,
-        "mc-logs" => handle_logs_with(ctx, backend).await,
-        "mc-say" => handle_say_with(ctx, backend).await,
-        "mc-whitelist" => handle_whitelist_with(ctx, backend).await,
-        "mc-backup" => handle_backup_with(ctx, backend).await,
-        "mc-restart" => handle_restart_with(ctx, backend).await,
-        "mc-cmd" => handle_cmd_with(ctx, backend).await,
-        _ => {}
-    }
+async fn handle_mods_with<B: CommandBackend>(ctx: &CommandContext, backend: &B) {
+    let msg = format_mods_message(&ctx.mod_config);
+    backend.respond(&ctx.app_id, &ctx.token, &msg).await;
 }
 
 async fn resolve_direct_ip<B: CommandBackend>(
@@ -214,6 +320,7 @@ async fn handle_start_with<B: CommandBackend>(ctx: &CommandContext, backend: &B)
         .await
     {
         Ok(_) => {
+            let mod_hint = format_mods_hint(&ctx.mod_config);
             backend
                 .respond(
                     &ctx.app_id,
@@ -221,7 +328,7 @@ async fn handle_start_with<B: CommandBackend>(ctx: &CommandContext, backend: &B)
                     &format!(
                         "🚀 **Starting Minecraft Server!**\n\
                          Ephemeral node provisioning on Hetzner Cloud (`{}`).\n\
-                         Connect in ~90s at `{}`.",
+                         Connect in ~90s at `{}`.{mod_hint}",
                         ctx.server_location, ctx.fqdn
                     ),
                 )
@@ -550,8 +657,71 @@ mod tests {
             server_location: "nbg1".to_string(),
             command_channel_id: "100200300".to_string(),
             caller_name: "Steve".to_string(),
+            mod_config: ModConfig::default(),
             command_data: None,
         }
+    }
+
+    #[test]
+    fn test_mc_mods_command_and_start_hint_for_vanilla_and_modpack() {
+        let mut ctx = test_ctx();
+        let backend = MockBackend::new();
+
+        // 1. Default / Server-only + Optional mods -> no client mods required to join, but lists optional & server-only
+        ctx.mod_config = ModConfig {
+            server_type: "FABRIC".to_string(),
+            mc_version: "26.3".to_string(),
+            modrinth_modpack: String::new(),
+            client_required_mods: String::new(),
+            client_optional_mods: "fabric-api,lithium,ferrite-core".to_string(),
+            server_only_mods: "geyser:beta,floodgate:beta,easyauth".to_string(),
+            curseforge_projects: String::new(),
+        };
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Mods,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
+        let fabric_reply = backend.responses.borrow().last().unwrap().clone();
+        assert!(fabric_reply.contains("No client mods required to join"));
+        assert!(fabric_reply.contains("Optional Client Mods"));
+        assert!(fabric_reply.contains("https://modrinth.com/mod/lithium"));
+        assert!(fabric_reply.contains("Server-Only Mods"));
+        assert!(fabric_reply.contains("`geyser:beta`"));
+
+        // 2. Modpack + required client mods + server-only neologin
+        ctx.mod_config = ModConfig {
+            server_type: "MODRINTH".to_string(),
+            mc_version: "1.21.1".to_string(),
+            modrinth_modpack: "create-combined:beta".to_string(),
+            client_required_mods: "mekanism,ae2,pipez:beta".to_string(),
+            client_optional_mods: String::new(),
+            server_only_mods: "neologin".to_string(),
+            curseforge_projects: "projecte".to_string(),
+        };
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Mods,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
+        let mods_reply = backend.responses.borrow().last().unwrap().clone();
+        assert!(mods_reply.contains("https://modrinth.com/modpack/create-combined"));
+        assert!(mods_reply.contains("https://modrinth.com/mod/mekanism"));
+        assert!(mods_reply.contains("https://www.curseforge.com/minecraft/mc-mods/projecte"));
+        assert!(mods_reply.contains("Server-Only Mods (No Client Install Needed):** `neologin`"));
+
+        // 3. /mc-start includes concise /mc-mods hint when client mods are required
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Start,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
+        let start_reply = backend.responses.borrow().last().unwrap().clone();
+        assert!(start_reply.contains("create-combined:beta"));
+        assert!(start_reply.contains("/mc-mods"));
     }
 
     #[test]
@@ -564,8 +734,12 @@ mod tests {
         };
         backend.doh_ip = Some("142.132.1.2".to_string());
 
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-status", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Status,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
 
         let responses = backend.responses.borrow();
         assert_eq!(responses.len(), 1);
@@ -579,8 +753,12 @@ mod tests {
         let mut backend = MockBackend::new();
         backend.active_workflow = Some(ActiveWorkflow::Stop);
 
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-start", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Start,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
 
         assert!(backend.dispatched_workflows.borrow().is_empty());
         let responses = backend.responses.borrow();
@@ -597,8 +775,12 @@ mod tests {
             ip: Some("142.132.1.2:25565".to_string()),
         };
 
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-start", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Start,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
 
         assert!(backend.dispatched_workflows.borrow().is_empty());
         let responses = backend.responses.borrow();
@@ -612,8 +794,12 @@ mod tests {
         let ctx = test_ctx();
         let backend = MockBackend::new();
 
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-start", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Start,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
 
         assert_eq!(
             *backend.dispatched_workflows.borrow(),
@@ -635,7 +821,7 @@ mod tests {
             ip: None,
         };
         futures_util::FutureExt::now_or_never(execute_command_with(
-            "mc-stop",
+            SlashCommand::Stop,
             &ctx,
             &online_backend,
         ))
@@ -648,7 +834,7 @@ mod tests {
 
         let offline_backend = MockBackend::new();
         futures_util::FutureExt::now_or_never(execute_command_with(
-            "mc-stop",
+            SlashCommand::Stop,
             &ctx,
             &offline_backend,
         ))
@@ -665,8 +851,12 @@ mod tests {
         let mut ctx = test_ctx();
         let backend = MockBackend::new();
 
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-players", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Players,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
         assert!(
             backend
                 .responses
@@ -676,8 +866,12 @@ mod tests {
                 .contains("`Steve`")
         );
 
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-top", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Top,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
         assert!(
             backend
                 .responses
@@ -687,8 +881,12 @@ mod tests {
                 .contains("4000 MB")
         );
 
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-logs", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Logs,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
         assert!(backend.responses.borrow().last().unwrap().contains("Done!"));
 
         ctx.command_data = Some(CommandData {
@@ -700,8 +898,12 @@ mod tests {
                 options: vec![],
             }],
         });
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-say", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Say,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
         assert_eq!(
             *backend.say_calls.borrow(),
             vec![("Steve".to_string(), "Hello miners!".to_string())]
@@ -721,8 +923,12 @@ mod tests {
                 }],
             }],
         });
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-whitelist", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Whitelist,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
         assert!(
             backend
                 .responses
@@ -732,8 +938,12 @@ mod tests {
                 .contains("Added Steve")
         );
 
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-backup", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Backup,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
         assert!(
             backend
                 .responses
@@ -743,8 +953,12 @@ mod tests {
                 .contains("Saved the game")
         );
 
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-restart", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Restart,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
         assert!(
             backend
                 .responses
@@ -763,8 +977,12 @@ mod tests {
                 options: vec![],
             }],
         });
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-cmd", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Cmd,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
         assert_eq!(
             *backend.rcon_calls.borrow(),
             vec!["time set day".to_string()]
@@ -777,22 +995,35 @@ mod tests {
         let mut backend = MockBackend::new();
         backend.players_result = Err(AgentError::Offline);
 
-        futures_util::FutureExt::now_or_never(execute_command_with("mc-players", &ctx, &backend))
-            .unwrap();
+        futures_util::FutureExt::now_or_never(execute_command_with(
+            SlashCommand::Players,
+            &ctx,
+            &backend,
+        ))
+        .unwrap();
         let msg = backend.responses.borrow()[0].clone();
         assert!(msg.contains("currently offline"));
         assert!(msg.contains("<#100200300>"));
     }
 
     #[test]
-    fn test_unknown_command_is_ignored() {
-        let ctx = test_ctx();
-        let backend = MockBackend::new();
-
-        futures_util::FutureExt::now_or_never(execute_command_with("unknown-cmd", &ctx, &backend))
-            .unwrap();
-
-        assert!(backend.dispatched_workflows.borrow().is_empty());
-        assert!(backend.responses.borrow().is_empty());
+    fn test_slash_command_parse_rejects_unknown_and_roundtrips() {
+        assert_eq!(SlashCommand::parse("unknown-cmd"), None);
+        for cmd in [
+            SlashCommand::Status,
+            SlashCommand::Mods,
+            SlashCommand::Start,
+            SlashCommand::Stop,
+            SlashCommand::Players,
+            SlashCommand::Top,
+            SlashCommand::Logs,
+            SlashCommand::Say,
+            SlashCommand::Whitelist,
+            SlashCommand::Backup,
+            SlashCommand::Restart,
+            SlashCommand::Cmd,
+        ] {
+            assert_eq!(SlashCommand::parse(cmd.as_str()), Some(cmd));
+        }
     }
 }

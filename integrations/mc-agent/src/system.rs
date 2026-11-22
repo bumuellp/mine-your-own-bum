@@ -188,9 +188,16 @@ fn redact_ipv4(input: &str) -> String {
 /// Reads the last `lines` (clamped to `1..=80`) from `log_path`, sanitizing each line.
 pub async fn tail_log_file(log_path: &str, requested_lines: usize) -> Result<String, String> {
     let count = requested_lines.clamp(1, 80);
-    let content = tokio::fs::read_to_string(log_path)
-        .await
-        .map_err(|e| format!("failed to read log file {log_path}: {e}"))?;
+    let content = match tokio::fs::read_to_string(log_path).await {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(
+                "[mc-agent] Log file (/logs/latest.log) does not exist yet — Minecraft container is still initializing or downloading mods."
+                    .to_string(),
+            );
+        }
+        Err(e) => return Err(format!("failed to read log file {log_path}: {e}")),
+    };
 
     let all_lines: Vec<&str> = content.lines().collect();
     let start = all_lines.len().saturating_sub(count);

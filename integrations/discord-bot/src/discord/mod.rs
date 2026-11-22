@@ -6,11 +6,17 @@ pub mod format;
 pub mod models;
 
 pub use client::update_deferred_response;
-pub use commands::{CommandContext, execute_command};
-pub use format::{format_already_running_message, format_blocked_action, format_status_message};
+pub use commands::{
+    AccessTier, ChannelScope, CommandContext, CommandSpec, SlashCommand, execute_command,
+};
+pub use format::{
+    format_already_running_message, format_blocked_action, format_mods_hint, format_mods_message,
+    format_status_message,
+};
 pub use models::Interaction;
 
 use crate::auth::{is_user_authorized, verify_signature};
+use crate::types::ModConfig;
 use serde_json::json;
 use worker::{Context, Env, Request, Response, Result};
 
@@ -30,9 +36,9 @@ fn optional_var(env: &Env, name: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Enforces `#mc-commands` vs `#mc-chat` channel separation when channel IDs are configured.
+/// Enforces `#mc-commands` vs `#mc-chat` channel separation based on `SlashCommand::channel_scope()`.
 pub fn check_channel_restriction(
-    command: &str,
+    command: SlashCommand,
     channel_id: Option<&str>,
     command_channel_id: &str,
     chat_channel_id: &str,
@@ -40,28 +46,37 @@ pub fn check_channel_restriction(
     let cmd_ch = command_channel_id.trim();
     let chat_ch = chat_channel_id.trim();
 
-    if command == "mc-say" {
-        if !chat_ch.is_empty() && channel_id != Some(chat_ch) {
-            return Some(format!("💬 Please use `/mc-say` in <#{chat_ch}>."));
+    match command.channel_scope() {
+        ChannelScope::Chat => {
+            if !chat_ch.is_empty() && channel_id != Some(chat_ch) {
+                return Some(format!(
+                    "💬 Please use `/{}` in <#{chat_ch}>.",
+                    command.as_str()
+                ));
+            }
+            None
         }
-        return None;
+        ChannelScope::Commands => {
+            if !cmd_ch.is_empty() && channel_id != Some(cmd_ch) {
+                return Some(format!("⚙️ Please use server commands in <#{cmd_ch}>."));
+            }
+            None
+        }
     }
-
-    if !cmd_ch.is_empty() && channel_id != Some(cmd_ch) {
-        return Some(format!("⚙️ Please use server commands in <#{cmd_ch}>."));
-    }
-
-    None
 }
 
-/// Evaluates tiered ACL rules:
-/// - Public guild commands (`mc-status`, `mc-players`, `mc-top`, `mc-say`): allowed for any guild member.
-/// - Lifecycle commands (`mc-start`, `mc-stop`, `mc-backup`): allowed if `ALLOWED_USER_IDS` is empty, otherwise restricted.
-/// - High-privilege admin commands (`mc-whitelist`, `mc-restart`, `mc-logs`, `mc-cmd`): fail closed if `ALLOWED_USER_IDS` is empty.
-pub fn is_command_authorized(command: &str, allowed_ids_raw: Option<&str>, user_id: &str) -> bool {
-    match command {
-        "mc-status" | "mc-players" | "mc-top" | "mc-say" => true,
-        "mc-whitelist" | "mc-restart" | "mc-logs" | "mc-cmd" => {
+/// Evaluates tiered ACL rules directly from `SlashCommand::access_tier()`:
+/// - `AccessTier::Public`: allowed for any guild member.
+/// - `AccessTier::Lifecycle`: allowed if `ALLOWED_USER_IDS` is empty, otherwise restricted.
+/// - `AccessTier::AdminFailClosed`: fails closed if `ALLOWED_USER_IDS` is empty.
+pub fn is_command_authorized(
+    command: SlashCommand,
+    allowed_ids_raw: Option<&str>,
+    user_id: &str,
+) -> bool {
+    match command.access_tier() {
+        AccessTier::Public => true,
+        AccessTier::AdminFailClosed => {
             let Some(raw) = allowed_ids_raw else {
                 return false;
             };
@@ -75,7 +90,7 @@ pub fn is_command_authorized(command: &str, allowed_ids_raw: Option<&str>, user_
                 .any(|s| !s.is_empty());
             has_any && is_user_authorized(raw, user_id)
         }
-        _ => match allowed_ids_raw {
+        AccessTier::Lifecycle => match allowed_ids_raw {
             Some(raw) => is_user_authorized(raw, user_id),
             None => true,
         },
@@ -113,12 +128,16 @@ pub async fn handle_interaction(mut req: Request, env: Env, ctx: Context) -> Res
 
     // Discord APPLICATION_COMMAND (type: 2)
     if interaction.interaction_type == 2 {
-        let command_name = interaction.command_name().unwrap_or_default().to_string();
+        let raw_name = interaction.command_name().unwrap_or_default();
+        let Some(command) = SlashCommand::parse(raw_name) else {
+            return ephemeral_response("⚠️ Unknown slash command.");
+        };
+
         let command_channel_id = optional_var(&env, "COMMAND_CHANNEL_ID");
         let chat_channel_id = optional_var(&env, "CHAT_CHANNEL_ID");
 
         if let Some(redirect_msg) = check_channel_restriction(
-            &command_name,
+            command,
             interaction.channel_id.as_deref(),
             &command_channel_id,
             &chat_channel_id,
@@ -128,11 +147,20 @@ pub async fn handle_interaction(mut req: Request, env: Env, ctx: Context) -> Res
 
         let allowed_ids = env.secret("ALLOWED_USER_IDS").ok().map(|s| s.to_string());
         let user_id = interaction.user_id().unwrap_or_default();
-        if !is_command_authorized(&command_name, allowed_ids.as_deref(), user_id) {
+        if !is_command_authorized(command, allowed_ids.as_deref(), user_id) {
             return ephemeral_response("⛔ You do not have permission to run this command.");
         }
 
         let caller_name = interaction.caller_display_name();
+        let mod_config = ModConfig {
+            server_type: optional_var(&env, "MC_SERVER_TYPE"),
+            mc_version: optional_var(&env, "MC_VERSION"),
+            modrinth_modpack: optional_var(&env, "MC_MODRINTH_MODPACK"),
+            client_required_mods: optional_var(&env, "MC_CLIENT_REQUIRED_MODS"),
+            client_optional_mods: optional_var(&env, "MC_CLIENT_OPTIONAL_MODS"),
+            server_only_mods: optional_var(&env, "MC_SERVER_ONLY_MODS"),
+            curseforge_projects: optional_var(&env, "MC_CURSEFORGE_PROJECTS"),
+        };
         let cmd_ctx = CommandContext {
             owner: env.var("GITHUB_OWNER")?.to_string(),
             repo: env.var("GITHUB_REPO")?.to_string(),
@@ -146,6 +174,7 @@ pub async fn handle_interaction(mut req: Request, env: Env, ctx: Context) -> Res
                 .unwrap_or_else(|_| "fsn1".to_string()),
             command_channel_id,
             caller_name,
+            mod_config,
             command_data: interaction.data,
         };
 
@@ -157,7 +186,7 @@ pub async fn handle_interaction(mut req: Request, env: Env, ctx: Context) -> Res
 
         // Respond immediately with deferred acknowledgment (type: 5) to satisfy Discord's < 3s SLA
         ctx.wait_until(async move {
-            execute_command(&command_name, &cmd_ctx, agent_fetcher, agent_secret).await;
+            execute_command(command, &cmd_ctx, agent_fetcher, agent_secret).await;
         });
 
         return Response::from_json(&json!({ "type": 5 }));
@@ -174,44 +203,79 @@ mod tests {
     fn test_channel_restriction_separates_commands_and_chat() {
         // /mc-say must be in chat_channel_id when configured
         assert!(
-            check_channel_restriction("mc-say", Some("111"), "111", "222")
+            check_channel_restriction(SlashCommand::Say, Some("111"), "111", "222")
                 .unwrap()
                 .contains("<#222>")
         );
-        assert!(check_channel_restriction("mc-say", Some("222"), "111", "222").is_none());
+        assert!(check_channel_restriction(SlashCommand::Say, Some("222"), "111", "222").is_none());
 
         // Operational commands must be in command_channel_id when configured
         assert!(
-            check_channel_restriction("mc-players", Some("222"), "111", "222")
+            check_channel_restriction(SlashCommand::Players, Some("222"), "111", "222")
                 .unwrap()
                 .contains("<#111>")
         );
-        assert!(check_channel_restriction("mc-players", Some("111"), "111", "222").is_none());
+        assert!(
+            check_channel_restriction(SlashCommand::Players, Some("111"), "111", "222").is_none()
+        );
 
         // No restriction when unconfigured
-        assert!(check_channel_restriction("mc-say", Some("999"), "", "").is_none());
-        assert!(check_channel_restriction("mc-top", Some("999"), "", "").is_none());
+        assert!(check_channel_restriction(SlashCommand::Say, Some("999"), "", "").is_none());
+        assert!(check_channel_restriction(SlashCommand::Top, Some("999"), "", "").is_none());
     }
 
     #[test]
     fn test_tiered_acl_enforcement() {
         // Public commands open to any guild member even when allowed_user_ids is populated
-        assert!(is_command_authorized("mc-status", Some("111"), "999"));
-        assert!(is_command_authorized("mc-players", Some("111"), "999"));
-        assert!(is_command_authorized("mc-top", Some("111"), "999"));
-        assert!(is_command_authorized("mc-say", Some("111"), "999"));
+        assert!(is_command_authorized(
+            SlashCommand::Status,
+            Some("111"),
+            "999"
+        ));
+        assert!(is_command_authorized(
+            SlashCommand::Mods,
+            Some("111"),
+            "999"
+        ));
+        assert!(is_command_authorized(
+            SlashCommand::Players,
+            Some("111"),
+            "999"
+        ));
+        assert!(is_command_authorized(SlashCommand::Top, Some("111"), "999"));
+        assert!(is_command_authorized(SlashCommand::Say, Some("111"), "999"));
 
         // Lifecycle commands open when empty, restricted when configured
-        assert!(is_command_authorized("mc-start", Some(""), "999"));
-        assert!(!is_command_authorized("mc-start", Some("111"), "999"));
-        assert!(is_command_authorized("mc-start", Some("111"), "111"));
+        assert!(is_command_authorized(SlashCommand::Start, Some(""), "999"));
+        assert!(!is_command_authorized(
+            SlashCommand::Start,
+            Some("111"),
+            "999"
+        ));
+        assert!(is_command_authorized(
+            SlashCommand::Start,
+            Some("111"),
+            "111"
+        ));
 
         // High-privilege commands fail closed when ALLOWED_USER_IDS is empty/missing
-        assert!(!is_command_authorized("mc-cmd", None, "111"));
-        assert!(!is_command_authorized("mc-cmd", Some("[]"), "111"));
-        assert!(!is_command_authorized("mc-logs", Some(""), "111"));
-        assert!(!is_command_authorized("mc-whitelist", Some("111"), "999"));
-        assert!(is_command_authorized("mc-whitelist", Some("111"), "111"));
-        assert!(is_command_authorized("mc-restart", Some("111"), "111"));
+        assert!(!is_command_authorized(SlashCommand::Cmd, None, "111"));
+        assert!(!is_command_authorized(SlashCommand::Cmd, Some("[]"), "111"));
+        assert!(!is_command_authorized(SlashCommand::Logs, Some(""), "111"));
+        assert!(!is_command_authorized(
+            SlashCommand::Whitelist,
+            Some("111"),
+            "999"
+        ));
+        assert!(is_command_authorized(
+            SlashCommand::Whitelist,
+            Some("111"),
+            "111"
+        ));
+        assert!(is_command_authorized(
+            SlashCommand::Restart,
+            Some("111"),
+            "111"
+        ));
     }
 }

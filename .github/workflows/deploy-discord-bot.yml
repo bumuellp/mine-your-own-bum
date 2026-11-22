@@ -68,6 +68,11 @@ jobs:
             dns.subname
             dns.domain
             server.location
+            minecraft.server_type
+            minecraft.version
+            minecraft.modrinth_modpack
+            minecraft.modrinth_projects
+            minecraft.curseforge_projects
 
       - name: Decrypt Secrets (SOPS)
         id: sec
@@ -91,6 +96,11 @@ jobs:
             fromJSON(steps.sec.outputs.json)['cloudflare_api_token'] == null))
         run: >-
           echo "::notice ::Discord bot disabled in settings or Cloudflare credentials missing. Skipping deployment."
+
+      - name: Resolve Modrinth Project Sides (Client vs Server)
+        id: mods
+        if: fromJSON(steps.cfg.outputs.json)['discord.enabled'] == 'true'
+        run: ./scripts/resolve-modrinth-sides.sh --github-output
 
       - name: Setup Rust Toolchain
         if: |
@@ -121,6 +131,13 @@ jobs:
             SERVER_LOCATION
             COMMAND_CHANNEL_ID
             CHAT_CHANNEL_ID
+            MC_SERVER_TYPE
+            MC_VERSION
+            MC_MODRINTH_MODPACK
+            MC_CLIENT_REQUIRED_MODS
+            MC_CLIENT_OPTIONAL_MODS
+            MC_SERVER_ONLY_MODS
+            MC_CURSEFORGE_PROJECTS
           secrets: |
             DISCORD_PUBLIC_KEY
             DISCORD_APPLICATION_ID
@@ -141,6 +158,13 @@ jobs:
           SERVER_LOCATION: ${{ fromJSON(steps.cfg.outputs.json)['server.location'] || 'fsn1' }}
           COMMAND_CHANNEL_ID: ${{ fromJSON(steps.cfg.outputs.json)['discord.command_channel_id'] || '' }}
           CHAT_CHANNEL_ID: ${{ fromJSON(steps.cfg.outputs.json)['discord.chat_channel_id'] || '' }}
+          MC_SERVER_TYPE: ${{ fromJSON(steps.cfg.outputs.json)['minecraft.server_type'] || 'FABRIC' }}
+          MC_VERSION: ${{ fromJSON(steps.cfg.outputs.json)['minecraft.version'] || '' }}
+          MC_MODRINTH_MODPACK: ${{ fromJSON(steps.cfg.outputs.json)['minecraft.modrinth_modpack'] || '' }}
+          MC_CLIENT_REQUIRED_MODS: ${{ steps.mods.outputs.client_required_mods || '' }}
+          MC_CLIENT_OPTIONAL_MODS: ${{ steps.mods.outputs.client_optional_mods || '' }}
+          MC_SERVER_ONLY_MODS: ${{ steps.mods.outputs.server_only_mods || '' }}
+          MC_CURSEFORGE_PROJECTS: ${{ fromJSON(steps.cfg.outputs.json)['minecraft.curseforge_projects'] || '' }}
           AGENT_SHARED_SECRET: ${{ secrets.AGENT_SHARED_SECRET || fromJSON(steps.sec.outputs.json)['agent_shared_secret'] || '' }}
 
       - name: Register Slash Commands with Discord REST API

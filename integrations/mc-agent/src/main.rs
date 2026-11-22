@@ -5,8 +5,10 @@ use mc_agent::config::RuntimeConfig;
 use mc_agent::discord::{DiscordWebhookClient, notify_boot_ready_once};
 use mc_agent::http::{probe_health, serve};
 use mc_agent::log_watcher::watch_latest_log;
+use mc_agent::rcon::RconClient;
 use std::env;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpListener;
 
 #[tokio::main]
@@ -31,8 +33,22 @@ async fn main() {
         let fqdn = runtime.server_fqdn.clone();
         let ipv4 = runtime.server_ipv4.clone();
         let loc = runtime.server_location.clone();
+        let rcon = RconClient::new(
+            runtime.agent.rcon_host.clone(),
+            runtime.agent.rcon_port,
+            runtime.agent.rcon_password.clone(),
+        );
         tokio::spawn(async move {
-            notify_boot_ready_once(&client, &marker, &webhook, &fqdn, &ipv4, &loc).await;
+            // Poll RCON readiness (up to 15m) so mc-agent and cloudflared can start
+            // immediately on VM boot while only firing the "ONLINE & Ready" webhook
+            // once Minecraft finishes loading mods and accepts RCON connections.
+            for _ in 0..180 {
+                if rcon.execute("list").await.is_ok() {
+                    notify_boot_ready_once(&client, &marker, &webhook, &fqdn, &ipv4, &loc).await;
+                    break;
+                }
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
         });
     }
 

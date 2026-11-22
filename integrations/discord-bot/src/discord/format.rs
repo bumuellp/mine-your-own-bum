@@ -1,9 +1,119 @@
 //! Pure markdown message formatters for Discord slash command responses
 
 use crate::agent::{AgentError, AgentPlayers, AgentSystem};
-use crate::types::ActiveWorkflow;
+use crate::types::{ActiveWorkflow, ModConfig};
 
 const DISCORD_SAFE_MSG_LIMIT: usize = 1900;
+
+/// Formats a concise 1-line client mod reminder for `/mc-start` when client mods are required.
+pub fn format_mods_hint(cfg: &ModConfig) -> String {
+    if !cfg.requires_client_mods() {
+        return String::new();
+    }
+    let extra_count = cfg.required_modrinth_mods().len() + cfg.client_curseforge_mods().len();
+    let mp = cfg.modrinth_modpack.trim();
+    let summary = match (!mp.is_empty(), extra_count) {
+        (true, 0) => format!("`{mp}`"),
+        (true, n) => format!("`{mp}` (+{n} extra mods)"),
+        (false, n) => format!("{n} required mods"),
+    };
+    format!(
+        "\n📦 **Client Mods Required:** {summary} — run `/mc-mods` for download links & launcher slugs."
+    )
+}
+
+/// Formats the full `/mc-mods` response with loader, version, clickable Modrinth/CurseForge URLs, optional/server mods, and launcher slugs.
+pub fn format_mods_message(cfg: &ModConfig) -> String {
+    let loader = if cfg.server_type.trim().is_empty() {
+        "FABRIC"
+    } else {
+        cfg.server_type.trim()
+    };
+    let ver = if cfg.mc_version.trim().is_empty() {
+        "LATEST"
+    } else {
+        cfg.mc_version.trim()
+    };
+
+    let mut out = format!(
+        "📦 **Client Setup & Mods (`/mc-mods`)**\n\
+         • **Server Type / Loader:** `{loader}` (Minecraft `{ver}`)\n"
+    );
+
+    let mut slugs_for_copy = Vec::new();
+    if !cfg.requires_client_mods() {
+        out.push_str(&format!(
+            "✅ **No client mods required to join!** You can connect directly using a standard Vanilla Minecraft `{ver}` client.\n"
+        ));
+    } else {
+        let mp = cfg.modrinth_modpack.trim();
+        if !mp.is_empty() {
+            let mp_slug = mp.split(':').next().unwrap_or(mp).trim();
+            out.push_str(&format!(
+                "• **Base Modpack (Modrinth — Required):** [{mp_slug}](<https://modrinth.com/modpack/{mp_slug}>) (`{mp}`)\n"
+            ));
+            slugs_for_copy.push(mp.to_string());
+        }
+
+        let mr_mods = cfg.required_modrinth_mods();
+        if !mr_mods.is_empty() {
+            out.push_str("\n**Required Modrinth Mods (Must Install to Join):**\n");
+            for m in &mr_mods {
+                let slug = m.split(':').next().unwrap_or(m).trim();
+                out.push_str(&format!(
+                    "• [{slug}](<https://modrinth.com/mod/{slug}>) (`{m}`)\n"
+                ));
+                slugs_for_copy.push(m.clone());
+            }
+        }
+
+        let cf_mods = cfg.client_curseforge_mods();
+        if !cf_mods.is_empty() {
+            out.push_str("\n**Required CurseForge Mods (Must Install to Join):**\n");
+            for c in &cf_mods {
+                let slug = c.split(':').next().unwrap_or(c).trim();
+                out.push_str(&format!(
+                    "• [{slug}](<https://www.curseforge.com/minecraft/mc-mods/{slug}>) (`{c}`)\n"
+                ));
+                slugs_for_copy.push(format!("curseforge:{c}"));
+            }
+        }
+    }
+
+    let opt_mods = cfg.optional_modrinth_mods();
+    if !opt_mods.is_empty() {
+        out.push_str(
+            "\n**✨ Optional Client Mods (Supported on Client, Not Required to Join):**\n",
+        );
+        for m in &opt_mods {
+            let slug = m.split(':').next().unwrap_or(m).trim();
+            out.push_str(&format!(
+                "• [{slug}](<https://modrinth.com/mod/{slug}>) (`{m}`)\n"
+            ));
+        }
+    }
+
+    let srv_mods = cfg.server_modrinth_mods();
+    if !srv_mods.is_empty() {
+        let names = srv_mods
+            .iter()
+            .map(|m| format!("`{m}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!(
+            "\n**🖥️ Server-Only Mods (No Client Install Needed):** {names}\n"
+        ));
+    }
+
+    if !slugs_for_copy.is_empty() {
+        out.push_str(&format!(
+            "\n**Required Launcher Slugs (`Minecraft {ver}`):**\n```text\n{}\n```",
+            slugs_for_copy.join("\n")
+        ));
+    }
+
+    out.trim_end().to_string()
+}
 
 /// Format real-time server status response markdown for `/mc-status`
 pub fn format_status_message(
