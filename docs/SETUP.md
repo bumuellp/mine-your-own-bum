@@ -110,7 +110,7 @@ openssl rand -base64 32
 | `backup_s3_endpoint` | *Optional* | S3 API endpoint URL for backup uploads (required if `backup.enabled: true`). |
 | `backup_s3_access_key` | *Optional* | S3 Access Key ID for backup bucket (required if `backup.enabled: true`). |
 | `backup_s3_secret_key` | *Optional* | S3 Secret Access Key for backup bucket (required if `backup.enabled: true`). |
-| `cloudflare_api_token` | *Optional* | Cloudflare API token with `Workers:Edit` permissions (plus Tunnel/VPC permissions if managing Workers VPC via Wrangler). Required if Discord bot is enabled. See [Discord Bot Guide](../integrations/discord-bot/README.md). |
+| `cloudflare_api_token` | *Optional* | Cloudflare Account or User API token (**Manage Account → Account API Tokens** or **My Profile → API Tokens**) with `Account → Workers Scripts → Edit` and `Account → Network Services → Connectivity Directory → Bind` (required when binding `[[vpc_services]]` in `wrangler.toml`). Required if Discord bot is enabled. See [Discord Bot Guide](../integrations/discord-bot/README.md). |
 | `discord_public_key` | *Optional* | Discord Application Public Key (64 hex characters) for interaction verification. |
 | `discord_application_id` | *Optional* | Discord Application ID. |
 | `discord_bot_token` | *Optional* | Discord Bot Token for registering slash commands. |

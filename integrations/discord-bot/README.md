@@ -109,8 +109,9 @@ sequenceDiagram
    - Click **Deploy**.
    - You now have an active worker and assigned URL: `https://minecraft-discord-bot.<your-subdomain>.workers.dev`.
    - *(CI/CD will compile your Rust code and overwrite the "Hello World" placeholder on first deployment).*
-3. **Generate CI/CD API Token (Worker-Scoped or Account-Scoped)**:
-   - On your newly created worker's page, go to **Settings → Builds** (or **CI/CD**) → **External CI/CD** → **API token for external CI/CD** → **Create Token** (or create an account token under **My Profile → API Tokens** with **Edit Cloudflare Workers** + **Cloudflare Tunnel: Edit** + **Workers VPC: Edit** if managing tunnels/VPC via CLI).
+3. **Generate CI/CD API Token (Account or User API Token)**:
+   - On your newly created worker's page, go to **Settings → Builds** (or **CI/CD**) → **External CI/CD** → **API token for external CI/CD** → **Create Token** (or create a token directly from the **Edit Cloudflare Workers** template). Depending on how you create it, Cloudflare stores it either as an **Account API Token** (**Manage Account → Account API Tokens**) or a **User API Token** (**My Profile → API Tokens**).
+   - **Important for Workers VPC (`MC_AGENT` binding)**: Edit your token in **Manage Account → Account API Tokens** or **My Profile → API Tokens** and add **`Account` → `Network Services` → `Connectivity Directory` → `Bind`** (which includes `Read`, or add both `Bind` and `Read` if selectable). Without `Connectivity Directory: Bind`, deploying a Worker with `[[vpc_services]]` fails with Cloudflare API error `[code: 10196]`.
    - Copy the generated API token (`cloudflare_api_token`).
 4. **Create Cloudflare Tunnel & Workers VPC Service *(Zero-Trust Sidecar Bridge, Free Tier)***:
    > [!NOTE]
@@ -321,11 +322,7 @@ DISCORD_APPLICATION_ID="your_app_id" \
 ```
 
 #### Automated Sync via GitHub Actions
-To re-register slash commands through CI:
-1. Navigate to **Actions → Deploy Discord Bot** in your GitHub repository.
-2. Click **Run workflow**.
-3. Check the box **Force synchronize slash commands with Discord**.
-4. Click **Run workflow**.
+Slash commands are synchronized automatically whenever the **Deploy Discord Bot** workflow runs on `main` (either on push or by clicking **Actions → Deploy Discord Bot → Run workflow**).
 
 ---
 

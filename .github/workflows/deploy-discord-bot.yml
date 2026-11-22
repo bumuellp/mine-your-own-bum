@@ -15,11 +15,6 @@ name: Deploy Discord Bot
       - "integrations/discord-bot/**"
       - ".github/workflows/deploy-discord-bot.yml"
   workflow_dispatch:
-    inputs:
-      sync_commands:
-        description: "Force synchronize slash commands with Discord"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -46,7 +41,7 @@ jobs:
           run-test: "true"
 
   deploy-worker:
-    name: Deploy Cloudflare Worker
+    name: Deploy Cloudflare Worker & Sync Commands
     needs: lint
     if: |
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
@@ -54,6 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -83,6 +79,7 @@ jobs:
             cloudflare_api_token
             discord_public_key
             discord_application_id
+            discord_bot_token
             github_pat
             agent_shared_secret
 
@@ -146,36 +143,12 @@ jobs:
           CHAT_CHANNEL_ID: ${{ fromJSON(steps.cfg.outputs.json)['discord.chat_channel_id'] || '' }}
           AGENT_SHARED_SECRET: ${{ secrets.AGENT_SHARED_SECRET || fromJSON(steps.sec.outputs.json)['agent_shared_secret'] || '' }}
 
-  sync-slash-commands:
-    name: Sync Discord Slash Commands
-    needs: deploy-worker
-    if: |
-      ((github.event_name == 'workflow_dispatch' && inputs.sync_commands == true) ||
-      (github.event_name == 'push' &&
-       contains(toJSON(github.event.commits), 'integrations/discord-bot/scripts/register-commands.sh'))) &&
-        github.repository != 'bumuellp/mine-your-own-bum'
-    runs-on: ubuntu-latest
-    env:
-      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Decrypt Discord Bot Secrets (SOPS)
-        id: sec
-        uses: bumuellp/lights-camera-bum-action/decrypt-sops@5ddbb7a43c1bdab312398f243434dd040507c5a7 # v1.13.0
-        with:
-          age-key: ${{ secrets.SOPS_AGE_KEY }}
-          file: config/secrets.enc.yaml
-          keys: |
-            discord_bot_token
-            discord_application_id
-
       - name: Register Slash Commands with Discord REST API
         if: |
-          env.DISCORD_BOT_TOKEN != '' ||
-          (fromJSON(steps.sec.outputs.json)['discord_bot_token'] != '' &&
-           fromJSON(steps.sec.outputs.json)['discord_bot_token'] != null)
+          fromJSON(steps.cfg.outputs.json)['discord.enabled'] == 'true' &&
+          (env.DISCORD_BOT_TOKEN != '' ||
+           (fromJSON(steps.sec.outputs.json)['discord_bot_token'] != '' &&
+            fromJSON(steps.sec.outputs.json)['discord_bot_token'] != null))
         working-directory: integrations/discord-bot
         env:
           DISCORD_BOT_TOKEN: ${{ env.DISCORD_BOT_TOKEN || fromJSON(steps.sec.outputs.json)['discord_bot_token'] }}
