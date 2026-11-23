@@ -63,7 +63,7 @@ backup:
 containers:
   minecraft_server: "itzg/minecraft-server:2026.10.0"  # renovate: datasource=docker depName=itzg/minecraft-server
   backup: "itzg/mc-backup:2026.10.1"                  # renovate: datasource=docker depName=itzg/mc-backup
-  cloudflared: "cloudflare/cloudflared:2026.3.0"      # renovate: datasource=docker depName=cloudflare/cloudflared
+  cloudflared: "cloudflare/cloudflared:2026.11.1"      # renovate: datasource=docker depName=cloudflare/cloudflared
   mc_agent: "ghcr.io/bumuellp/mc-agent:0.1.0"         # renovate: datasource=docker depName=ghcr.io/bumuellp/mc-agent
 
 packer:
