@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.10.0@sha256:40fe21f44bb8cddf1eb1226db190d0a984118f62ee02a91b77d99448d28264a6 AS xx
 
-FROM --platform=$BUILDPLATFORM rust:1.99-alpine3.21 AS builder
+FROM --platform=$BUILDPLATFORM rust:1.100-alpine3.21@sha256:9ebb58cb22e0b1d959d5cb58de06e8e45b67760c80eaccaf8b7bbc4dfc6c1be9 AS builder
 ARG TARGETPLATFORM
 COPY --from=xx / /
 RUN apk add --no-cache clang lld && \
